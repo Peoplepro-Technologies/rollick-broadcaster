@@ -57,6 +57,17 @@ pytest -v
 
 Each test uses a fresh SQLite DB in a tmp directory; the dev DB is never touched. The conftest also resets the APScheduler singleton between tests.
 
+### Smoke test (end-to-end)
+
+Runs the full pipeline in-process against a fresh temp DB:
+
+```bash
+python scripts/smoke.py            # 11/11 steps on a healthy install
+python scripts/smoke.py --keep-on-fail  # keep tmpdir for debugging
+```
+
+Covers: login → seed users → text content → broadcast (auto-mints links) → send (MockSender writes to `sent_log/`) → viewer GET (records view) → anonymous comment POST (passes honeypot + time-to-fill) → analytics counters → link revocation.
+
 ## Production checklist
 
 When deploying beyond local dev, complete these steps in order:
@@ -98,7 +109,7 @@ static/
   css/tokens.css, admin.css, viewer.css
   js/users.js (admin form handlers)
 tests/                          ← 161 tests, function-scoped DB per test
-scripts/                        ← (seed.py planned)
+scripts/                        ← smoke.py (e2e), backup.sh (cron-ready)
 docker-compose.yml              ← one-command deploy
 Dockerfile                      ← non-root, healthcheck
 ```
