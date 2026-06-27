@@ -1,0 +1,258 @@
+"""Broadcast CRUD + target resolution + link generation.
+
+The headline v1 feature: when a broadcast is created (or PATCHed with
+new targets), one `broadcast_links` row is minted per active user in
+the resolved recipient set. Each token is a URL the admin can include
+in the WhatsApp/email message — the viewer (Phase 3) resolves it back
+to the broadcast.
+
+`generate_links` flag (broadcast.generate_links column) lets admins
+opt out for plain email blasts that don't need per-recipient tracking.
+Defaults to ON.
+
+Status state machine for v1 (Phase 4 adds 'sending'/'sent'/'partial'/'failed'):
+  draft → queued (via /schedule)  |  → cancelled (via /cancel)
+  queued → draft (via /cancel)
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Iterable, Optional
+
+from fastapi import HTTPException
+
+from broadcaster.db import get_db
+from broadcaster.services import groups as groups_svc
+from broadcaster.services import links as links_svc
+from broadcaster.settings import get_settings
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# ── Create ────────────────────────────────────────────────────
+
+def create_broadcast(
+    title: str,
+    category: str = "General",
+    message_text: Optional[str] = None,
+    content_id: Optional[int] = None,
+    delivery_channel: str = "whatsapp",
+    group_ids: Optional[Iterable[int]] = None,
+    user_ids: Optional[Iterable[int]] = None,
+    generate_links: bool = True,
+    created_by: Optional[str] = None,
+) -> dict:
+    if not title or not title.strip():
+        raise HTTPException(status_code=400, detail="title_required")
+    if delivery_channel not in ("whatsapp", "email", "both"):
+        raise HTTPException(status_code=400, detail="invalid_delivery_channel")
+
+    group_ids = list(group_ids or [])
+    user_ids = list(user_ids or [])
+    if not group_ids and not user_ids:
+        raise HTTPException(status_code=400, detail="at_least_one_target_required")
+
+    settings = get_settings()
+    now_str = _now()
+
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO broadcasts (title, category, message_text, content_id, "
+            "delivery_channel, generate_links, created_by, created_at, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')",
+            (title.strip(), category or "General", message_text, content_id,
+             delivery_channel, 1 if generate_links else 0, created_by, now_str),
+        )
+        bid = cur.lastrowid
+        for gid in group_ids:
+            conn.execute(
+                "INSERT INTO broadcast_targets (broadcast_id, group_id) VALUES (?, ?)",
+                (bid, gid),
+            )
+        for uid in user_ids:
+            conn.execute(
+                "INSERT INTO broadcast_targets (broadcast_id, user_id) VALUES (?, ?)",
+                (bid, uid),
+            )
+
+    link_info: dict = {"created": 0, "skipped_existing": 0, "total": 0}
+    if generate_links:
+        recipients = groups_svc.resolve_recipients(group_ids=group_ids, user_ids=user_ids)
+        link_info = links_svc.generate_links_for_broadcast(
+            broadcast_id=bid, user_ids=recipients, ttl_days=settings.link_token_ttl_days,
+        )
+
+    b = get_broadcast(bid)
+    b["link_info"] = link_info
+    return b
+
+
+# ── Read ──────────────────────────────────────────────────────
+
+def list_broadcasts(status: Optional[str] = None, with_links: Optional[bool] = None,
+                    q: Optional[str] = None) -> list[dict]:
+    where: list[str] = []
+    params: list = []
+    if status:
+        where.append("b.status = ?")
+        params.append(status)
+    if with_links is True:
+        where.append("b.generate_links = 1")
+    elif with_links is False:
+        where.append("b.generate_links = 0")
+    if q:
+        where.append("(b.title LIKE ? OR b.message_text LIKE ?)")
+        like = f"%{q}%"
+        params += [like, like]
+
+    sql = (
+        "SELECT b.id, b.title, b.category, b.delivery_channel, b.status, b.scheduled_at, "
+        "b.sent_at, b.created_at, b.generate_links, "
+        "(SELECT COUNT(*) FROM broadcast_links WHERE broadcast_id = b.id) AS link_count, "
+        "(SELECT COUNT(*) FROM broadcast_targets WHERE broadcast_id = b.id) AS target_count "
+        "FROM broadcasts b"
+    )
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY b.id DESC"
+
+    with get_db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_broadcast(bid: int) -> Optional[dict]:
+    with get_db() as conn:
+        r = conn.execute(
+            "SELECT * FROM broadcasts WHERE id = ?", (bid,)
+        ).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    d["generate_links"] = bool(d["generate_links"])
+    # targets
+    with get_db() as conn:
+        tg = conn.execute(
+            "SELECT bt.id, bt.group_id, bt.user_id, "
+            "COALESCE(g.name, '') AS group_name, COALESCE(u.name, '') AS user_name "
+            "FROM broadcast_targets bt "
+            "LEFT JOIN groups g ON g.id = bt.group_id "
+            "LEFT JOIN users u ON u.id = bt.user_id "
+            "WHERE bt.broadcast_id = ?", (bid,)
+        ).fetchall()
+    d["targets"] = [dict(t) for t in tg]
+    return d
+
+
+def list_links(bid: int) -> list[dict]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT bl.id, bl.broadcast_id, bl.user_id, bl.token, bl.created_at, "
+            "bl.expires_at, bl.revoked_at, bl.first_viewed_at, "
+            "u.name AS user_name, u.phone AS user_phone, u.email AS user_email, "
+            "(SELECT COUNT(*) FROM link_views WHERE link_id = bl.id) AS view_count, "
+            "(SELECT COUNT(*) FROM comments WHERE link_id = bl.id AND status='visible') AS comment_count "
+            "FROM broadcast_links bl "
+            "JOIN users u ON u.id = bl.user_id "
+            "WHERE bl.broadcast_id = ? "
+            "ORDER BY bl.id",
+            (bid,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Update / state transitions ────────────────────────────────
+
+def update_broadcast(bid: int, **fields) -> Optional[dict]:
+    b = get_broadcast(bid)
+    if not b:
+        return None
+    if b["status"] in ("sent", "sending", "partial", "failed", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"cannot_edit_{b['status']}_broadcast")
+
+    allowed = {"title", "category", "message_text", "content_id", "delivery_channel",
+               "scheduled_at", "generate_links"}
+    sets, params = [], []
+    targets_changed = False
+    new_group_ids: Optional[list] = None
+    new_user_ids: Optional[list] = None
+
+    for k, v in fields.items():
+        if k == "group_ids":
+            new_group_ids = list(v or [])
+            targets_changed = True
+        elif k == "user_ids":
+            new_user_ids = list(v or [])
+            targets_changed = True
+        elif k in allowed and v is not None:
+            if k == "generate_links":
+                v = 1 if v else 0
+            sets.append(f"{k} = ?"); params.append(v)
+
+    with get_db() as conn:
+        if sets:
+            params.append(bid)
+            conn.execute(f"UPDATE broadcasts SET {', '.join(sets)} WHERE id = ?", params)
+        if targets_changed:
+            # Replace targets
+            conn.execute("DELETE FROM broadcast_targets WHERE broadcast_id = ?", (bid,))
+            for gid in (new_group_ids or []):
+                conn.execute(
+                    "INSERT INTO broadcast_targets (broadcast_id, group_id) VALUES (?, ?)",
+                    (bid, gid),
+                )
+            for uid in (new_user_ids or []):
+                conn.execute(
+                    "INSERT INTO broadcast_targets (broadcast_id, user_id) VALUES (?, ?)",
+                    (bid, uid),
+                )
+
+    # Re-mint links for the new recipient set — outside the prior transaction.
+    if targets_changed and b.get("generate_links"):
+        settings = get_settings()
+        recipients = groups_svc.resolve_recipients(
+            group_ids=new_group_ids or [], user_ids=new_user_ids or [],
+        )
+        links_svc.generate_links_for_broadcast(
+            broadcast_id=bid, user_ids=recipients, ttl_days=settings.link_token_ttl_days,
+        )
+
+    return get_broadcast(bid)
+
+
+def schedule_broadcast(bid: int, when_iso: str) -> dict:
+    """Set status=queued + scheduled_at. Phase 4 wires the actual send."""
+    with get_db() as conn:
+        b = conn.execute("SELECT status FROM broadcasts WHERE id = ?", (bid,)).fetchone()
+        if not b:
+            raise HTTPException(status_code=404, detail="not_found")
+        if b["status"] not in ("draft", "queued"):
+            raise HTTPException(status_code=400, detail=f"cannot_schedule_{b['status']}_broadcast")
+        conn.execute(
+            "UPDATE broadcasts SET scheduled_at = ?, status = 'queued' WHERE id = ?",
+            (when_iso, bid),
+        )
+    return get_broadcast(bid)  # type: ignore[return-value]
+
+
+def cancel_broadcast(bid: int) -> dict:
+    with get_db() as conn:
+        b = conn.execute("SELECT status FROM broadcasts WHERE id = ?", (bid,)).fetchone()
+        if not b:
+            raise HTTPException(status_code=404, detail="not_found")
+        if b["status"] in ("sent", "sending", "partial", "failed", "cancelled"):
+            raise HTTPException(status_code=400, detail=f"cannot_cancel_{b['status']}_broadcast")
+        conn.execute("UPDATE broadcasts SET status = 'cancelled' WHERE id = ?", (bid,))
+    return get_broadcast(bid)  # type: ignore[return-value]
+
+
+def delete_broadcast(bid: int) -> bool:
+    with get_db() as conn:
+        b = conn.execute("SELECT status FROM broadcasts WHERE id = ?", (bid,)).fetchone()
+        if not b:
+            return False
+        # FK cascade on broadcast_links, link_views, comments
+        conn.execute("DELETE FROM broadcasts WHERE id = ?", (bid,))
+    return True

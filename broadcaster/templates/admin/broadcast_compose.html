@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}New Broadcast — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>New Broadcast</h1>
+      <p class="sub">Compose and queue a message — each target user gets a unique link</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <form id="compose-form" onsubmit="submitCompose(event)">
+      <label class="field">
+        <span>Title *</span>
+        <input name="title" required placeholder="Q1 Update">
+      </label>
+
+      <div class="grid-2">
+        <label class="field">
+          <span>Category</span>
+          <select name="category">
+            <option>General</option>
+            <option>Promotions</option>
+            <option>Alerts</option>
+            <option>Reminders</option>
+            <option>Announcements</option>
+            <option>Marketing</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Delivery Channel *</span>
+          <select name="delivery_channel">
+            <option value="whatsapp">WhatsApp</option>
+            <option value="email">Email</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Media / Content</span>
+        <select name="content_id">
+          <option value="">— None (text only) —</option>
+          {% for c in content %}
+            <option value="{{ c.id }}">
+              [{{ c.content_type }}] {{ c.caption or c.file_name or ('#' ~ c.id) }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Message Text</span>
+        <textarea name="message_text" rows="4" placeholder="Hello! Here's the latest update…"></textarea>
+      </label>
+
+      <fieldset class="field">
+        <legend>Target Groups</legend>
+        <div class="multi-select">
+          {% for g in groups %}
+          <label class="check">
+            <input type="checkbox" name="group_ids" value="{{ g.id }}">
+            <span>{{ g.name }} <small>({{ g.member_count }})</small></span>
+          </label>
+          {% else %}
+          <p class="muted">No groups yet. <a href="/admin/groups">Create or rebuild groups</a> first.</p>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>Target Individual Users (optional)</legend>
+        <div class="multi-select" style="max-height: 200px; overflow-y: auto;">
+          {% for u in users %}
+          <label class="check">
+            <input type="checkbox" name="user_ids" value="{{ u.id }}">
+            <span>{{ u.name }} — {{ u.phone }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <label class="check">
+        <input type="checkbox" name="generate_links" checked>
+        <span><b>Generate unique per-subscriber links</b> (recommended) — each user gets a unique URL with their own token</span>
+      </label>
+
+      <div id="compose-error" class="form-error" hidden></div>
+
+      <div class="form-actions">
+        <a href="/admin/broadcasts" class="btn secondary">Cancel</a>
+        <button type="submit" class="btn success">Save as Draft</button>
+      </div>
+    </form>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function submitCompose(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const group_ids = fd.getAll('group_ids').map(Number);
+  const user_ids = fd.getAll('user_ids').map(Number);
+  const payload = {
+    title: fd.get('title'),
+    category: fd.get('category'),
+    delivery_channel: fd.get('delivery_channel'),
+    message_text: fd.get('message_text') || null,
+    content_id: fd.get('content_id') || null,
+    group_ids, user_ids,
+    generate_links: !!fd.get('generate_links'),
+  };
+  const err = document.getElementById('compose-error');
+  err.hidden = true;
+  const r = await fetch('/api/broadcasts', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) {
+    const body = await r.json();
+    location.href = `/admin/broadcasts/${body.id}`;
+  } else {
+    const b = await r.json().catch(()=>({}));
+    err.textContent = b.detail || `Error ${r.status}`;
+    err.hidden = false;
+  }
+}
+</script>
+{% endblock %}

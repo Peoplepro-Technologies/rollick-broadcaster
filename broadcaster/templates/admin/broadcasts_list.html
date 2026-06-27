@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Broadcasts — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Broadcasts</h1>
+      <p class="sub">Compose and send messages — {{ broadcasts|length }} total</p>
+    </div>
+    <a href="/admin/broadcasts/new" class="btn success">+ New Broadcast</a>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>All Broadcasts</h2>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Title</th><th>Category</th><th>Channel</th>
+            <th>Targets</th><th>Links</th><th>Status</th>
+            <th>Scheduled</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in broadcasts %}
+          <tr>
+            <td><b>{{ b.title }}</b></td>
+            <td><span class="pill muted">{{ b.category }}</span></td>
+            <td>{{ b.delivery_channel }}</td>
+            <td>{{ b.target_count }}</td>
+            <td>{{ b.link_count }}</td>
+            <td>
+              {% if b.status == 'draft' %}<span class="pill muted">Draft</span>
+              {% elif b.status == 'queued' %}<span class="pill info">Queued</span>
+              {% elif b.status == 'sent' %}<span class="pill success">Sent</span>
+              {% elif b.status == 'cancelled' %}<span class="pill danger">Cancelled</span>
+              {% else %}<span class="pill warning">{{ b.status }}</span>{% endif %}
+            </td>
+            <td style="font-size: 12px; color: var(--muted);">
+              {{ b.scheduled_at[:16] if b.scheduled_at else '—' }}
+            </td>
+            <td>
+              <a href="/admin/broadcasts/{{ b.id }}" class="btn small">View</a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="empty">No broadcasts yet. <a href="/admin/broadcasts/new">Create your first one</a>.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+{% endblock %}

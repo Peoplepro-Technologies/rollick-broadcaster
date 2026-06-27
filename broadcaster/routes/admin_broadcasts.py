@@ -1,0 +1,98 @@
+"""Admin broadcasts router — CRUD + link list + state transitions."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from broadcaster.routes.admin_auth import require_admin
+from broadcaster.services import broadcasts as bc_svc
+
+router = APIRouter(
+    prefix="/api/broadcasts",
+    tags=["broadcasts"],
+    dependencies=[Depends(require_admin)],
+)
+
+
+@router.get("")
+def list_broadcasts(
+    status: str | None = None,
+    with_links: bool | None = None,
+    q: str | None = None,
+):
+    return bc_svc.list_broadcasts(status=status, with_links=with_links, q=q)
+
+
+@router.post("")
+def create_broadcast(payload: dict, request_admin_id: int = Depends(require_admin)):
+    from broadcaster.services import admin as admin_svc
+    creator = admin_svc.find_by_id(request_admin_id)
+    return bc_svc.create_broadcast(
+        title=payload.get("title", ""),
+        category=payload.get("category", "General"),
+        message_text=payload.get("message_text"),
+        content_id=payload.get("content_id"),
+        delivery_channel=payload.get("delivery_channel", "whatsapp"),
+        group_ids=payload.get("group_ids") or [],
+        user_ids=payload.get("user_ids") or [],
+        generate_links=bool(payload.get("generate_links", True)),
+        created_by=creator["username"] if creator else None,
+    )
+
+
+@router.get("/{bid}")
+def get_broadcast(bid: int):
+    b = bc_svc.get_broadcast(bid)
+    if not b:
+        raise HTTPException(status_code=404, detail="not_found")
+    return b
+
+
+@router.patch("/{bid}")
+def update_broadcast(bid: int, payload: dict):
+    b = bc_svc.update_broadcast(bid, **payload)
+    if not b:
+        raise HTTPException(status_code=404, detail="not_found")
+    return b
+
+
+@router.delete("/{bid}")
+def delete_broadcast(bid: int):
+    if not bc_svc.delete_broadcast(bid):
+        raise HTTPException(status_code=404, detail="not_found")
+    return {"ok": True}
+
+
+@router.post("/{bid}/schedule")
+def schedule(bid: int, payload: dict):
+    when = payload.get("scheduled_at")
+    if not when:
+        raise HTTPException(status_code=400, detail="scheduled_at_required")
+    return bc_svc.schedule_broadcast(bid, when)
+
+
+@router.post("/{bid}/cancel")
+def cancel(bid: int):
+    return bc_svc.cancel_broadcast(bid)
+
+
+# Stub for Phase 4 — currently just acknowledges; doesn't actually send.
+@router.post("/{bid}/send")
+def send_now(bid: int):
+    return {
+        "ok": True,
+        "broadcast_id": bid,
+        "note": "send fan-out wires in Phase 4; current behavior: marks broadcast for later delivery.",
+    }
+
+
+@router.get("/{bid}/links")
+def list_links(bid: int):
+    return bc_svc.list_links(bid)
+
+
+@router.post("/{bid}/links/{lid}/revoke")
+def revoke_link(bid: int, lid: int):
+    from broadcaster.services import links as links_svc
+    if not links_svc.revoke_link(lid):
+        raise HTTPException(status_code=404, detail="not_found")
+    return {"ok": True}

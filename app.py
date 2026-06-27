@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from broadcaster import __version__
 from broadcaster.db import init_db
-from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content
+from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts
 from broadcaster.services import admin as admin_svc
 from broadcaster.settings import get_settings
 
@@ -55,6 +55,7 @@ app.include_router(admin_auth.router)
 app.include_router(admin_users.router)
 app.include_router(admin_groups.router)
 app.include_router(admin_content.router)
+app.include_router(admin_broadcasts.router)
 
 
 # ── Public routes ───────────────────────────────────────────────
@@ -132,6 +133,52 @@ def admin_content_page(request: Request):
          "admin": {"username": "admin"}, "items": items,
          "texts": [c for c in items if c["content_type"] == "text"],
          "media": [c for c in items if c["content_type"] == "media"]},
+    )
+
+
+@app.get("/admin/broadcasts", response_class=HTMLResponse)
+def admin_broadcasts_page(request: Request):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import broadcasts as bc_svc
+    return templates.TemplateResponse(
+        request, "admin/broadcasts_list.html",
+        {"app_name": get_settings().app_name, "active_nav": "broadcasts",
+         "admin": {"username": "admin"},
+         "broadcasts": bc_svc.list_broadcasts()},
+    )
+
+
+@app.get("/admin/broadcasts/new", response_class=HTMLResponse)
+def admin_broadcast_new_page(request: Request):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import content as content_svc
+    from broadcaster.services import groups as groups_svc
+    from broadcaster.services import users as users_svc
+    return templates.TemplateResponse(
+        request, "admin/broadcast_compose.html",
+        {"app_name": get_settings().app_name, "active_nav": "broadcasts",
+         "admin": {"username": "admin"},
+         "content": content_svc.list_content(),
+         "groups": groups_svc.list_groups(),
+         "users": users_svc.list_users()},
+    )
+
+
+@app.get("/admin/broadcasts/{bid}", response_class=HTMLResponse)
+def admin_broadcast_detail_page(request: Request, bid: int):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import broadcasts as bc_svc
+    b = bc_svc.get_broadcast(bid)
+    if not b:
+        return HTMLResponse("Broadcast not found", status_code=404)
+    return templates.TemplateResponse(
+        request, "admin/broadcast_detail.html",
+        {"app_name": get_settings().app_name, "active_nav": "broadcasts",
+         "admin": {"username": "admin"},
+         "broadcast": b, "links": bc_svc.list_links(bid)},
     )
 
 
