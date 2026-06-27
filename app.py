@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from broadcaster import __version__
 from broadcaster.db import init_db
-from broadcaster.routes import admin_auth, admin_users
+from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content
 from broadcaster.services import admin as admin_svc
 from broadcaster.settings import get_settings
 
@@ -53,6 +53,8 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 app.include_router(admin_auth.router)
 app.include_router(admin_users.router)
+app.include_router(admin_groups.router)
+app.include_router(admin_content.router)
 
 
 # ── Public routes ───────────────────────────────────────────────
@@ -103,6 +105,33 @@ def admin_users_page(request: Request):
         request, "admin/users.html",
         {"app_name": get_settings().app_name, "active_nav": "users",
          "admin": {"username": "admin"}, "users": users},
+    )
+
+
+@app.get("/admin/groups", response_class=HTMLResponse)
+def admin_groups_page(request: Request):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import groups as groups_svc
+    return templates.TemplateResponse(
+        request, "admin/groups.html",
+        {"app_name": get_settings().app_name, "active_nav": "groups",
+         "admin": {"username": "admin"}, "groups": groups_svc.list_groups()},
+    )
+
+
+@app.get("/admin/content", response_class=HTMLResponse)
+def admin_content_page(request: Request):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import content as content_svc
+    items = content_svc.list_content()
+    return templates.TemplateResponse(
+        request, "admin/content.html",
+        {"app_name": get_settings().app_name, "active_nav": "content",
+         "admin": {"username": "admin"}, "items": items,
+         "texts": [c for c in items if c["content_type"] == "text"],
+         "media": [c for c in items if c["content_type"] == "media"]},
     )
 
 

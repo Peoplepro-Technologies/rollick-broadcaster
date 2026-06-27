@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Groups — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Groups</h1>
+      <p class="sub">Auto-generated from users + manual groups — {{ groups|length }} total</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>All Groups</h2>
+      <div class="actions">
+        <button class="btn small" onclick="rebuildAuto()">↻ Rebuild Auto</button>
+        <button class="btn success small" onclick="openAddGroup()">+ Add Manual Group</button>
+      </div>
+    </div>
+
+    <div id="action-result" class="form-error" hidden style="margin: 12px 0;"></div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th><th>Type</th><th>Source</th><th>Members</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in groups %}
+          <tr>
+            <td><b>{{ g.name }}</b></td>
+            <td><span class="pill muted">{{ g.type }}</span></td>
+            <td>
+              {% if g.is_auto %}<span class="pill info">Auto</span>
+              {% else %}<span class="pill success">Manual</span>{% endif %}
+            </td>
+            <td>{{ g.member_count }}</td>
+            <td>
+              {% if not g.is_auto %}
+              <button class="btn small danger" onclick="deleteGroup({{ g.id }}, '{{ g.name|e }}')">Delete</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No groups yet. <a href="#" onclick="rebuildAuto();return false;">Rebuild auto-groups</a> after adding users with dept/location, or create a manual group.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Add Manual Group modal -->
+<div id="add-group-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeAddGroup()">
+  <div class="modal-card">
+    <h3>Add Manual Group</h3>
+    <form id="add-group-form" onsubmit="submitAddGroup(event)">
+      <label>Name *<input name="name" required></label>
+      <label>Type<input name="type" value="manual"></label>
+      <label>Criteria (JSON, optional)<input name="criteria" placeholder='{"user_ids":[1,2,3]}'></label>
+      <div id="add-group-error" class="form-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeAddGroup()">Cancel</button>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openAddGroup() {
+  document.getElementById('add-group-modal').hidden = false;
+  document.getElementById('add-group-form').reset();
+  document.getElementById('add-group-error').hidden = true;
+}
+function closeAddGroup() { document.getElementById('add-group-modal').hidden = true; }
+
+async function submitAddGroup(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const payload = { name: fd.get('name'), type: fd.get('type') || 'manual' };
+  const c = fd.get('criteria'); if (c) payload.criteria = c;
+  const err = document.getElementById('add-group-error');
+  err.hidden = true;
+  const r = await fetch('/api/groups', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) location.reload();
+  else { const b = await r.json().catch(()=>({})); err.textContent = b.detail || r.status; err.hidden = false; }
+}
+
+async function deleteGroup(id, name) {
+  if (!confirm(`Delete group "${name}"?`)) return;
+  const r = await fetch(`/api/groups/${id}`, { method: 'DELETE' });
+  if (r.ok) location.reload();
+  else alert('Delete failed: ' + r.status);
+}
+
+async function rebuildAuto() {
+  const result = document.getElementById('action-result');
+  result.hidden = true;
+  const r = await fetch('/api/groups/rebuild-auto', { method: 'POST' });
+  const body = await r.json();
+  if (r.ok) {
+    result.textContent = `Rebuilt — ${body.created} auto groups (${body.departments} depts, ${body.locations} locations, ${body.combos} combos).`;
+    result.hidden = false;
+    setTimeout(() => location.reload(), 800);
+  } else {
+    result.textContent = 'Rebuild failed: ' + (body.detail || r.status);
+    result.hidden = false;
+  }
+}
+</script>
+{% endblock %}

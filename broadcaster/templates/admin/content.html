@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Content — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Content</h1>
+      <p class="sub">Reusable text + media library — {{ items|length }} item{{ '' if items|length == 1 else 's' }}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Text Snippets</h2>
+      <div class="actions">
+        <button class="btn success small" onclick="openAddText()">+ Add Text</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Caption</th><th>Body</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+          {% for c in texts %}
+          <tr>
+            <td>{{ c.caption or '' }}</td>
+            <td style="max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.content_data }}</td>
+            <td style="color: var(--muted); font-size: 12px;">{{ c.created_at[:10] }}</td>
+            <td><button class="btn small danger" onclick="deleteContent({{ c.id }})">Delete</button></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="empty">No text snippets yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Media</h2>
+      <div class="actions">
+        <label class="btn small" style="cursor:pointer;">
+          ↑ Upload Media
+          <input type="file" id="media-input" hidden>
+        </label>
+      </div>
+    </div>
+    <div id="upload-result" class="form-error" hidden style="margin: 12px 0;"></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Caption</th><th>File</th><th>Size</th><th>Type</th><th></th></tr></thead>
+        <tbody>
+          {% for m in media %}
+          <tr>
+            <td>{{ m.caption or '' }}</td>
+            <td><a href="/api/content/file/{{ m.id }}">{{ m.file_name }}</a></td>
+            <td>{{ m.file_size }} B</td>
+            <td><span class="pill muted">{{ m.mime_type }}</span></td>
+            <td><button class="btn small danger" onclick="deleteContent({{ m.id }})">Delete</button></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No media uploaded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Add Text modal -->
+<div id="add-text-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeAddText()">
+  <div class="modal-card">
+    <h3>Add Text Snippet</h3>
+    <form id="add-text-form" onsubmit="submitAddText(event)">
+      <label>Caption<input name="caption"></label>
+      <label>Body *<textarea name="body" required rows="6" style="display:block;width:100%;margin-top:4px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:var(--radius);font-family:inherit;font-size:14px;"></textarea></label>
+      <div id="add-text-error" class="form-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeAddText()">Cancel</button>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openAddText() {
+  document.getElementById('add-text-modal').hidden = false;
+  document.getElementById('add-text-form').reset();
+  document.getElementById('add-text-error').hidden = true;
+}
+function closeAddText() { document.getElementById('add-text-modal').hidden = true; }
+
+async function submitAddText(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const payload = { caption: fd.get('caption') || null, body: fd.get('body') };
+  const err = document.getElementById('add-text-error');
+  err.hidden = true;
+  const r = await fetch('/api/content/text', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) location.reload();
+  else { const b = await r.json().catch(()=>({})); err.textContent = b.detail || r.status; err.hidden = false; }
+}
+
+async function deleteContent(id) {
+  if (!confirm('Delete this content item?')) return;
+  const r = await fetch(`/api/content/${id}`, { method: 'DELETE' });
+  if (r.ok) location.reload();
+  else alert('Delete failed: ' + r.status);
+}
+
+document.getElementById('media-input').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const result = document.getElementById('upload-result');
+  result.hidden = true;
+  const r = await fetch('/api/content/media', { method: 'POST', body: fd });
+  if (r.ok) {
+    setTimeout(() => location.reload(), 400);
+  } else {
+    const b = await r.json().catch(()=>({}));
+    result.textContent = 'Upload failed: ' + (b.detail || r.status);
+    result.hidden = false;
+  }
+  ev.target.value = '';
+});
+</script>
+{% endblock %}
