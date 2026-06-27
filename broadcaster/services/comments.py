@@ -90,3 +90,34 @@ def flag(cid: int) -> bool:
     """Mark for review. v1 doesn't enforce a queue, so this is a no-op
     visible to admin via a pill on the moderation page."""
     return get_comment(cid) is not None
+
+
+def list_all(broadcast_id: int | None = None, status: str | None = None,
+             q: str | None = None) -> list[dict]:
+    """Admin-side list of comments across all broadcasts (or one)."""
+    where: list[str] = []
+    params: list = []
+    if broadcast_id is not None:
+        where.append("c.broadcast_id = ?")
+        params.append(broadcast_id)
+    if status:
+        where.append("c.status = ?")
+        params.append(status)
+    if q:
+        where.append("c.body LIKE ?")
+        params.append(f"%{q}%")
+    sql = (
+        "SELECT c.id, c.link_id, c.broadcast_id, c.body, c.author_hint, c.status, c.created_at, "
+        "b.title AS broadcast_title, "
+        "u.name AS user_name, u.phone AS user_phone "
+        "FROM comments c "
+        "JOIN broadcasts b ON b.id = c.broadcast_id "
+        "JOIN broadcast_links bl ON bl.id = c.link_id "
+        "JOIN users u ON u.id = bl.user_id "
+    )
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY c.created_at DESC"
+    with get_db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]

@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from broadcaster import __version__
 from broadcaster.db import init_db
-from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts, viewer
+from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts, admin_comments, viewer
 from broadcaster.services import admin as admin_svc
 from broadcaster.settings import get_settings
 
@@ -56,6 +56,7 @@ app.include_router(admin_users.router)
 app.include_router(admin_groups.router)
 app.include_router(admin_content.router)
 app.include_router(admin_broadcasts.router)
+app.include_router(admin_comments.router)
 viewer.set_templates(templates)
 app.include_router(viewer.router)
 
@@ -181,6 +182,21 @@ def admin_broadcast_detail_page(request: Request, bid: int):
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
          "admin": {"username": "admin"},
          "broadcast": b, "links": bc_svc.list_links(bid)},
+    )
+
+
+@app.get("/admin/comments", response_class=HTMLResponse)
+def admin_comments_page(request: Request, filter: str | None = None):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import comments as comments_svc
+    status = "hidden" if filter == "hidden" else "visible"
+    return templates.TemplateResponse(
+        request, "admin/comments.html",
+        {"app_name": get_settings().app_name, "active_nav": "comments",
+         "admin": {"username": "admin"},
+         "comments": comments_svc.list_all(status=status),
+         "filter": filter},
     )
 
 

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Comments — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Comments</h1>
+      <p class="sub">Moderate anonymous comments — {{ comments|length }} total</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>
+        {% if filter == 'hidden' %}Hidden
+        {% else %}All visible{% endif %}
+      </h2>
+      <div class="actions">
+        <a href="/admin/comments" class="btn small {% if not filter %}success{% else %}secondary{% endif %}">Visible</a>
+        <a href="/admin/comments?filter=hidden" class="btn small {% if filter == 'hidden' %}success{% else %}secondary{% endif %}">Hidden</a>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Body</th><th>Broadcast</th><th>User</th>
+            <th>Posted</th><th>Status</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in comments %}
+          <tr>
+            <td style="max-width: 380px; white-space: pre-wrap; word-wrap: break-word;">{{ c.body }}</td>
+            <td>
+              <a href="/admin/broadcasts/{{ c.broadcast_id }}">{{ c.broadcast_title }}</a>
+            </td>
+            <td>{{ c.user_name }}<br><small style="color:var(--muted)">{{ c.user_phone }}</small></td>
+            <td style="font-size: 12px; color: var(--muted);">{{ c.created_at[:16].replace('T', ' ') }}</td>
+            <td>
+              {% if c.status == 'visible' %}<span class="pill success">Visible</span>
+              {% else %}<span class="pill danger">Hidden</span>{% endif %}
+            </td>
+            <td>
+              {% if c.status == 'visible' %}
+              <button class="btn small danger" onclick="hideComment({{ c.id }})">Hide</button>
+              {% else %}
+              <button class="btn small" onclick="unhideComment({{ c.id }})">Unhide</button>
+              {% endif %}
+              <button class="btn small secondary" onclick="deleteComment({{ c.id }})">Delete</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="empty">No comments{% if filter == 'hidden' %} are hidden{% else %} yet{% endif %}.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function hideComment(id) {
+  if (!confirm('Hide this comment from public view?')) return;
+  const r = await fetch(`/api/comments/${id}`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ status: 'hidden' }),
+  });
+  if (r.ok) location.reload();
+  else alert('Hide failed: ' + r.status);
+}
+async function unhideComment(id) {
+  const r = await fetch(`/api/comments/${id}`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ status: 'visible' }),
+  });
+  if (r.ok) location.reload();
+  else alert('Unhide failed: ' + r.status);
+}
+async function deleteComment(id) {
+  if (!confirm('Permanently delete this comment?')) return;
+  const r = await fetch(`/api/comments/${id}`, { method: 'DELETE' });
+  if (r.ok) location.reload();
+  else alert('Delete failed: ' + r.status);
+}
+</script>
+{% endblock %}
