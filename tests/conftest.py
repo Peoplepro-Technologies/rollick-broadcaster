@@ -16,9 +16,9 @@ from httpx import ASGITransport, AsyncClient
 # Point settings at a fresh temp DB before app modules are imported.
 # Using a per-session file rather than :memory: so PRAGMA + FK work
 # the same as production.
-@pytest.fixture(scope="session")
-def test_db_path(tmp_path_factory) -> Path:
-    return tmp_path_factory.mktemp("data") / "test.db"
+@pytest.fixture
+def test_db_path(tmp_path) -> Path:
+    return tmp_path / "test.db"
 
 
 @pytest.fixture(autouse=True)

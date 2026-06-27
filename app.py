@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from broadcaster import __version__
 from broadcaster.db import init_db
-from broadcaster.routes import admin_auth
+from broadcaster.routes import admin_auth, admin_users
 from broadcaster.services import admin as admin_svc
 from broadcaster.settings import get_settings
 
@@ -52,6 +52,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 app.include_router(admin_auth.router)
+app.include_router(admin_users.router)
 
 
 # ── Public routes ───────────────────────────────────────────────
