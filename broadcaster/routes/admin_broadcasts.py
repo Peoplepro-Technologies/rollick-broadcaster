@@ -75,14 +75,10 @@ def cancel(bid: int):
     return bc_svc.cancel_broadcast(bid)
 
 
-# Stub for Phase 4 — currently just acknowledges; doesn't actually send.
+# Stub for Phase 4 — actually sends now (per-link fan-out).
 @router.post("/{bid}/send")
 def send_now(bid: int):
-    return {
-        "ok": True,
-        "broadcast_id": bid,
-        "note": "send fan-out wires in Phase 4; current behavior: marks broadcast for later delivery.",
-    }
+    return bc_svc.send_broadcast(bid)
 
 
 @router.get("/{bid}/links")

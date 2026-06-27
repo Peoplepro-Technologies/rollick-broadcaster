@@ -256,3 +256,110 @@ def delete_broadcast(bid: int) -> bool:
         # FK cascade on broadcast_links, link_views, comments
         conn.execute("DELETE FROM broadcasts WHERE id = ?", (bid,))
     return True
+
+
+# ── Send fan-out ─────────────────────────────────────────────
+
+def send_broadcast(bid: int) -> dict:
+    """Iterate the broadcast's active links, build per-user messages,
+    push through the appropriate sender(s), and record counters.
+
+    Status transitions:
+      draft|queued → sending → sent | partial | failed
+    """
+    b = get_broadcast(bid)
+    if not b:
+        raise HTTPException(status_code=404, detail="not_found")
+    if b["status"] in ("sent", "sending", "partial", "failed", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"cannot_send_{b['status']}_broadcast")
+
+    from broadcaster.services.senders import Message, channels_to_use, get_sender_for
+
+    settings = get_settings()
+    base = settings.base_public_url.rstrip("/")
+    now_str = _now()
+
+    with get_db() as conn:
+        conn.execute("UPDATE broadcasts SET status = 'sending' WHERE id = ?", (bid,))
+        links = conn.execute(
+            "SELECT bl.id AS link_id, bl.token, bl.user_id, "
+            "u.name AS user_name, u.phone AS user_phone, u.email AS user_email "
+            "FROM broadcast_links bl JOIN users u ON u.id = bl.user_id "
+            "WHERE bl.broadcast_id = ? AND bl.revoked_at IS NULL AND u.is_active = 1",
+            (bid,),
+        ).fetchall()
+
+    channels = channels_to_use(b["delivery_channel"])
+    counters: dict[str, dict[str, int]] = {ch: {"sent": 0, "failed": 0} for ch in channels}
+
+    for link in links:
+        viewer_link = f"{base}/v/{link['token']}"
+        body_text = _render_message(b, viewer_link)
+        for ch in channels:
+            recipient = link["user_phone"] if ch == "whatsapp" else link["user_email"]
+            if not recipient:
+                counters[ch]["failed"] += 1
+                continue
+            sender = get_sender_for(ch)
+            msg = Message(
+                channel=ch,
+                recipient=recipient,
+                subject=b["title"] if ch == "email" else None,
+                body=body_text,
+                viewer_link=viewer_link,
+                broadcast_id=bid,
+                user_id=link["user_id"],
+                link_id=link["link_id"],
+            )
+            result = sender.send(msg)
+            if result.ok:
+                counters[ch]["sent"] += 1
+            else:
+                counters[ch]["failed"] += 1
+
+    # Finalize status
+    total_sent = sum(c["sent"] for c in counters.values())
+    total_failed = sum(c["failed"] for c in counters.values())
+    if total_sent > 0 and total_failed == 0:
+        final = "sent"
+    elif total_sent > 0 and total_failed > 0:
+        final = "partial"
+    elif total_sent == 0 and total_failed > 0:
+        final = "failed"
+    else:
+        final = "sent"  # no recipients — vacuously successful
+
+    def _status_str(ch: str) -> str | None:
+        if ch not in counters:
+            return None
+        c = counters[ch]
+        return f"sent:{c['sent']},failed:{c['failed']}"
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE broadcasts SET status = ?, sent_at = ?, "
+            "whatsapp_status = ?, email_status = ? WHERE id = ?",
+            (final, now_str, _status_str("whatsapp"), _status_str("email"), bid),
+        )
+
+    return {
+        "broadcast_id": bid,
+        "status": final,
+        "sent_at": now_str,
+        "counters": counters,
+    }
+
+
+def _render_message(b: dict, viewer_link: str) -> str:
+    """Compose the per-user message body. The {{viewer_link}} placeholder
+    in the admin-supplied message_text is replaced with the actual URL.
+    """
+    body = b.get("message_text") or ""
+    body = body.replace("{{viewer_link}}", viewer_link).replace("{{link}}", viewer_link)
+    if viewer_link not in body:
+        # Always include the link so subscribers can click.
+        body = f"{body}\n\n{viewer_link}".strip()
+    title = b.get("title") or ""
+    if title and not body.startswith(title):
+        body = f"{title}\n\n{body}"
+    return body
