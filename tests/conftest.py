@@ -27,6 +27,10 @@ def _isolate_db(test_db_path: Path, monkeypatch):
     monkeypatch.setenv("SESSION_SECRET", "test-secret-32-chars-or-more-please")
     monkeypatch.setenv("IP_HASH_PEPPER", "test-pepper")
     monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-pass")
+    # Tests don't need cooldown timing — set to 0 so per-token-cap
+    # and other layered checks can be exercised in tight loops.
+    monkeypatch.setenv("COMMENT_COOLDOWN_SECONDS", "0")
+    monkeypatch.setenv("COMMENT_MAX_PER_LINK_LIFETIME", "3")
     # Force re-init since settings are cached.
     from broadcaster.settings import get_settings
     from broadcaster.db import init_db

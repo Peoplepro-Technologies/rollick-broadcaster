@@ -64,12 +64,22 @@
       <p class="muted">No comments yet. Be the first to share what you think.</p>
       {% endif %}
 
-      <!-- Comment form wires in Phase 5 -->
+      <!-- Comment form (Phase 5: live, with anti-spam + cooldown) -->
       <form id="comment-form" class="comment-form" data-token="{{ link.token }}"
-            onsubmit="event.preventDefault(); alert('Comments wire in Phase 5.');">
-        <textarea name="body" placeholder="Leave a comment…" rows="3" disabled></textarea>
-        <button type="submit" class="btn" disabled>Post comment</button>
-        <p class="muted" style="font-size: 12px; margin-top: 6px;">Comments are anonymous.</p>
+            onsubmit="return submitComment(event)">
+        <!-- Honeypot: real users never see/fill this. -->
+        <input type="text" name="website" tabindex="-1" autocomplete="off"
+               style="position:absolute;left:-9999px;opacity:0;pointer-events:none;" aria-hidden="true">
+        <input type="hidden" name="ts_issued" id="ts-issued">
+        <textarea name="body" id="comment-body" placeholder="Leave a comment…" rows="3" required></textarea>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="submit" class="btn" id="comment-submit">Post comment</button>
+          <span class="muted" id="cooldown-note" style="font-size: 12px; display: none;"></span>
+        </div>
+        <div id="comment-error" class="form-error" hidden></div>
+        <p class="muted" style="font-size: 12px; margin-top: 6px;">
+          Comments are anonymous. One per {{ 30 }} seconds. Max 3 per link. Max 500 chars.
+        </p>
       </form>
     </section>
   </main>
@@ -77,5 +87,74 @@
   <footer class="viewer-footer">
     <p>Powered by <b>Rollick Broadcaster</b> · <a href="#">Privacy</a></p>
   </footer>
+
+  <script>
+    // Mint ts_issued at page load so server can detect bots + stale tabs.
+    document.getElementById('ts-issued').value = Date.now();
+
+    // Per-session cooldown: gate the submit button for 30s after each post.
+    let cooldownUntil = 0;
+    const submitBtn = document.getElementById('comment-submit');
+    const note = document.getElementById('cooldown-note');
+
+    function tick() {
+      const now = Math.floor(Date.now() / 1000);
+      const remaining = cooldownUntil - now;
+      if (remaining > 0) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Wait…';
+        note.style.display = '';
+        note.textContent = `Cooldown: ${remaining}s`;
+      } else {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Post comment';
+        note.style.display = 'none';
+      }
+    }
+    setInterval(tick, 1000); tick();
+
+    async function submitComment(ev) {
+      ev.preventDefault();
+      if (submitBtn.disabled) return false;
+      const form = ev.target;
+      const fd = new FormData(form);
+      const errEl = document.getElementById('comment-error');
+      errEl.hidden = true;
+      const r = await fetch(`/v/${form.dataset.token}/comments`, { method: 'POST', body: fd });
+      if (r.ok) {
+        const body = await r.json();
+        cooldownUntil = Math.floor(Date.now() / 1000) + (body.cooldown_remaining_s || 30);
+        form.reset();
+        document.getElementById('ts-issued').value = Date.now();
+        // Reload to show the new comment (simple, no client-side append).
+        setTimeout(() => location.reload(), 600);
+        return false;
+      }
+      const body = await r.json().catch(() => ({}));
+      errEl.textContent = humanizeCommentError(body.detail, r.status);
+      errEl.hidden = false;
+      return false;
+    }
+
+    function humanizeCommentError(detail, status) {
+      const map = {
+        body_required: 'Please write a comment.',
+        body_too_short: 'Comment is too short.',
+        body_too_long: 'Comment is too long (max 500 chars).',
+        too_many_links: 'Only one link is allowed per comment.',
+        profanity: 'Comment contains blocked language.',
+        bot_detected: 'Submission rejected.',
+        submitted_too_fast: 'Please wait a moment before submitting.',
+        stale_form: 'Form expired — refresh the page and try again.',
+        per_token_cap_exceeded: 'You have already posted the maximum number of comments on this link.',
+        cooldown: 'Please wait before posting another comment.',
+        per_ip_broadcast_rate_exceeded: 'Too many comments from your network on this broadcast.',
+        per_ip_global_rate_exceeded: 'Too many comments — try again later.',
+        link_expired: 'This link is no longer active.',
+      };
+      if (status === 410) return 'This link is no longer active.';
+      return map[detail] || `Error: ${detail || status}`;
+    }
+  </script>
 </body>
 </html>

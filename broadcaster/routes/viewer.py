@@ -13,11 +13,13 @@ Phase 5 adds POST /v/{token}/comments.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from broadcaster.db import get_db
+from broadcaster.services import antispam
+from broadcaster.services import comments as comments_svc
 from broadcaster.services import links as links_svc
 from broadcaster.services import views as views_svc
 from broadcaster.settings import get_settings
@@ -120,9 +122,86 @@ def viewer_media(request: Request, token: str):
     path = Path(row["content_data"])
     if not path.exists():
         return JSONResponse({"error": "file_missing"}, status_code=404)
-    # Support HTTP Range for video scrubbing
     return FileResponse(
         path,
         media_type=row["mime_type"] or "application/octet-stream",
         filename=row["file_name"] or path.name,
     )
+
+
+# ── Phase 5: anonymous comments ──────────────────────────────
+
+@router.post("/{token}/comments")
+def post_comment(
+    request: Request,
+    token: str,
+    body: str = Form(...),
+    website: str = Form(default=""),       # honeypot
+    ts_issued: str = Form(default=""),     # millis when page rendered
+):
+    link = links_svc.resolve_token(token)
+    if not link:
+        raise HTTPException(status_code=410, detail="link_expired")
+
+    # Honeypot
+    if not antispam.check_honeypot(website):
+        raise HTTPException(status_code=400, detail="bot_detected")
+
+    # Time-to-fill
+    try:
+        ts_int = int(ts_issued) if ts_issued else None
+    except ValueError:
+        ts_int = None
+    ok, reason = antispam.check_time_to_fill(ts_int)
+    if not ok:
+        raise HTTPException(status_code=400, detail=reason)
+
+    # Body validation
+    ok, body_or_reason = antispam.validate_body(body)
+    if not ok:
+        raise HTTPException(status_code=422, detail=body_or_reason)
+    body = body_or_reason
+
+    # Rate limits
+    ip = _client_ip(request)
+    ip_hash = antispam.hash_for_ip(ip)
+
+    ok, reason = antispam.check_per_token_cap(link["id"])
+    if not ok:
+        raise HTTPException(status_code=429, detail=reason)
+
+    ok, reason = antispam.check_cooldown(link["id"])
+    if not ok:
+        raise HTTPException(status_code=429, detail=reason)
+
+    ok, reason = antispam.check_per_ip_rate(ip_hash, link["broadcast_id"])
+    if not ok:
+        raise HTTPException(status_code=429, detail=reason)
+
+    comment = comments_svc.create_comment(
+        link_id=link["id"],
+        broadcast_id=link["broadcast_id"],
+        body=body,
+        ip_hash=ip_hash,
+    )
+    return {
+        "id": comment["id"],
+        "created_at": comment["created_at"],
+        "cooldown_remaining_s": get_settings().comment_cooldown_seconds,
+    }
+
+
+@router.get("/{token}/comments")
+def list_comments(request: Request, token: str):
+    """Optional polling endpoint — server-side rendered HTML already
+    includes the initial list."""
+    link = links_svc.resolve_token(token)
+    if not link:
+        raise HTTPException(status_code=410, detail="link_expired")
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, body, created_at FROM comments "
+            "WHERE link_id = ? AND status = 'visible' ORDER BY created_at DESC LIMIT 20",
+            (link["id"],),
+        ).fetchall()
+    return [dict(r) for r in rows]
