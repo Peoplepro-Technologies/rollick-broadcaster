@@ -1,3 +1,109 @@
+/* ── Sidebar (admin) ─────────────────────────────────────────── */
+.app-shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column;
+}
+.brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 24px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.brand-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), #ff5fa2); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 4px 10px var(--primary-glow); }
+.brand-text { font-weight: 700; font-size: 15px; line-height: 1.2; }
+.brand-text .v { display: block; font-size: 11px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+.nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.nav a {
+  text-decoration: none; color: var(--text-2);
+  padding: 11px 14px; border-radius: var(--radius);
+  font-size: 14px; font-weight: 500;
+  display: flex; align-items: center; gap: 12px;
+  transition: all 0.15s;
+}
+.nav a:hover { background: var(--bg); color: var(--text); }
+.nav a.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.nav a .ico { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; }
+.sidebar-foot { padding-top: 16px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sidebar-foot .who { font-size: 13px; color: var(--text-2); }
+.sidebar-foot .who b { color: var(--text); display: block; font-weight: 600; }
+.sidebar-foot .who span { font-size: 11px; color: var(--muted); }
+.logout {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 12px; padding: 6px 10px;
+  border-radius: 6px; transition: all 0.15s; font-family: inherit;
+}
+.logout:hover { background: var(--danger-soft); color: var(--danger); }
+
+.main { padding: 32px 40px; overflow-x: auto; }
+.page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-head h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.page-head .sub { color: var(--text-2); font-size: 14px; margin-top: 2px; }
+
+/* ── Cards ───────────────────────────────────────────────────── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); }
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.card-head h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.card-head .actions { display: flex; gap: 8px; align-items: center; }
+
+/* ── Tables ──────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th, .table td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border); }
+.table th { color: var(--text-2); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.table tr:hover td { background: var(--bg); }
+.table .empty { text-align: center; color: var(--muted); padding: 32px; }
+
+/* ── Search input ────────────────────────────────────────────── */
+.search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 14px;
+  margin-bottom: 16px;
+  font-family: inherit;
+  background: white;
+}
+.search-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+
+/* ── Pills (status) ──────────────────────────────────────────── */
+.pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pill.success { background: var(--success-soft); color: var(--success); }
+.pill.muted   { background: var(--bg-2); color: var(--muted); }
+.pill.warning { background: var(--warning-soft); color: var(--warning); }
+.pill.danger  { background: var(--danger-soft); color: var(--danger); }
+.pill.info    { background: var(--info-soft); color: var(--info); }
+
+/* ── Modal ───────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  animation: fade-in 0.15s;
+}
+.modal-card {
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--shadow-lg);
+  animation: slide-in 0.2s;
+}
+.modal-card h3 { margin: 0 0 20px; font-size: 18px; font-weight: 700; }
+.modal-card label { display: block; font-size: 13px; font-weight: 500; color: var(--text-2); margin-bottom: 14px; }
+.modal-card label.check { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.modal-card input[type="text"], .modal-card input[type="email"], .modal-card input:not([type]) {
+  display: block; width: 100%; margin-top: 4px;
+  padding: 10px 12px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); font-size: 14px; font-family: inherit;
+  background: white;
+}
+.modal-card input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
 /* ── Login shell ─────────────────────────────────────────────── */
 .login-shell {
   min-height: 100vh;

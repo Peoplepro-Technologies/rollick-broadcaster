@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Users — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Users</h1>
+      <p class="sub">Manage who receives your broadcasts — {{ users|length }} subscriber{{ '' if users|length == 1 else 's' }}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>All Users</h2>
+      <div class="actions">
+        <button class="btn success small" onclick="openAddUser()">+ Add User</button>
+        <a href="/api/users/download" class="btn secondary small">⤓ Excel</a>
+        <label class="btn secondary small" style="cursor:pointer;">
+          ↑ Upload
+          <input type="file" accept=".xlsx" id="xlsx-input" hidden>
+        </label>
+      </div>
+    </div>
+
+    <input type="text" id="user-search" class="search-input"
+           placeholder="Search by name, phone, email…" oninput="filterUsers()">
+
+    <div id="import-result" class="form-error" hidden style="margin: 12px 0;"></div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th><th>Phone</th><th>Email</th>
+            <th>Department</th><th>Location</th><th>Status</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody">
+          {% for u in users %}
+          <tr data-search="{{ (u.name ~ ' ' ~ u.phone ~ ' ' ~ (u.email or ''))|lower }}">
+            <td>{{ u.name }}</td>
+            <td>{{ u.phone }}</td>
+            <td>{{ u.email or '' }}</td>
+            <td>{{ u.department or '' }}</td>
+            <td>{{ u.location or '' }}</td>
+            <td>
+              {% if u.is_active %}
+              <span class="pill success">Active</span>
+              {% else %}
+              <span class="pill muted">Inactive</span>
+              {% endif %}
+            </td>
+            <td>
+              <button class="btn small danger"
+                      onclick="deleteUser({{ u.id }}, '{{ u.name|e }}')">Delete</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="empty">No users yet — click <b>+ Add User</b> to start.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Add User modal -->
+<div id="add-user-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeAddUser()">
+  <div class="modal-card">
+    <h3>Add User</h3>
+    <form id="add-user-form" onsubmit="submitAddUser(event)">
+      <label>Name *<input name="name" required></label>
+      <label>Phone * (10 digits)<input name="phone" required pattern="[0-9]{10}"></label>
+      <label>Email<input name="email" type="email"></label>
+      <label>Department<input name="department"></label>
+      <label>Location<input name="location"></label>
+      <label class="check">
+        <input type="checkbox" name="is_active" checked> Active
+      </label>
+      <div id="add-user-error" class="form-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeAddUser()">Cancel</button>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/users.js"></script>
+{% endblock %}

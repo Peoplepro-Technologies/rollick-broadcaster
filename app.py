@@ -82,11 +82,28 @@ def admin_login_page(request: Request) -> HTMLResponse:
     )
 
 
-@app.get("/admin/")
+@app.get("/admin/", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
     if admin_auth.current_admin_id(request) is None:
         return RedirectResponse("/admin/login", status_code=303)
-    return {"app": "dashboard placeholder — Phase 1c wires Users/Groups/Content"}
+    return templates.TemplateResponse(
+        request, "admin/dashboard.html",
+        {"app_name": get_settings().app_name, "active_nav": "dashboard",
+         "admin": {"username": "admin"}},
+    )
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users_page(request: Request):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import users as users_svc
+    users = users_svc.list_users()
+    return templates.TemplateResponse(
+        request, "admin/users.html",
+        {"app_name": get_settings().app_name, "active_nav": "users",
+         "admin": {"username": "admin"}, "users": users},
+    )
 
 
 @app.get("/")

@@ -1,0 +1,41 @@
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-icon">📡</div>
+    <div class="brand-text">
+      {{ app_name }}
+      <span class="v">admin</span>
+    </div>
+  </div>
+  <nav class="nav">
+    <a href="/admin/" class="{% if active_nav == 'dashboard' %}active{% endif %}">
+      <span class="ico">📊</span> Dashboard
+    </a>
+    <a href="/admin/users" class="{% if active_nav == 'users' %}active{% endif %}">
+      <span class="ico">👥</span> Users
+    </a>
+    <a href="/admin/groups" class="{% if active_nav == 'groups' %}active{% endif %}">
+      <span class="ico">🏷️</span> Groups
+    </a>
+    <a href="/admin/content" class="{% if active_nav == 'content' %}active{% endif %}">
+      <span class="ico">📂</span> Content
+    </a>
+    <a href="/admin/broadcasts" class="{% if active_nav == 'broadcasts' %}active{% endif %}">
+      <span class="ico">📨</span> Broadcasts
+    </a>
+    <a href="/admin/comments" class="{% if active_nav == 'comments' %}active{% endif %}">
+      <span class="ico">💬</span> Comments
+    </a>
+    <a href="/admin/settings" class="{% if active_nav == 'settings' %}active{% endif %}">
+      <span class="ico">⚙️</span> Settings
+    </a>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="who">
+      <b>{{ admin.username }}</b>
+      <span>admin</span>
+    </div>
+    <form method="post" action="/api/auth/logout" style="margin:0;">
+      <button type="submit" class="logout">Logout</button>
+    </form>
+  </div>
+</aside>

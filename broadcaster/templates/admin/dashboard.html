@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="sub">Overview of users, groups, and broadcasts</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Welcome 👋</h2>
+    <p>Phase 1 dashboard placeholder. The real KPIs (Users · Groups · Broadcasts · Views 7d) wire in once Groups and Broadcasts land in Phase 1c/2.</p>
+  </div>
+</main>
+{% endblock %}
