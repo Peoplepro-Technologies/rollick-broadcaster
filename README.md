@@ -16,9 +16,9 @@ cp .env.example .env
 docker compose up -d
 
 # 3. Open
-#    Admin login:  http://localhost:8000/admin/login
-#    Health:       http://localhost:8000/api/health
-#    API docs:     http://localhost:8000/api/docs
+#    Admin login:  http://localhost:8123/admin/login
+#    Health:       http://localhost:8123/api/health
+#    API docs:     http://localhost:8123/api/docs
 ```
 
 **Useful commands:**

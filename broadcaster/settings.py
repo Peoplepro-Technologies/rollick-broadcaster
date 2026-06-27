@@ -21,8 +21,8 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "Rollick Broadcaster"
-    app_base_url: str = "http://localhost:8000"
-    base_public_url: str = "http://localhost:8000"
+    app_base_url: str = "http://localhost:8123"
+    base_public_url: str = "http://localhost:8123"
     link_token_ttl_days: int = 30
 
     # Admin bootstrap

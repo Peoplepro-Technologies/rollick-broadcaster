@@ -3,7 +3,7 @@
 # First-time setup:
 #   1. cp .env.example .env  (then edit ADMIN_PASSWORD, SESSION_SECRET, etc.)
 #   2. docker compose up -d
-#   3. Open http://localhost:8000/admin/login
+#   3. Open http://localhost:8123/admin/login
 #
 # Useful commands:
 #   docker compose logs -f app        # tail logs
@@ -18,7 +18,7 @@ services:
     container_name: rollick-broadcaster
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8123:8123"
     env_file:
       - .env
     environment:
@@ -31,7 +31,7 @@ services:
       - broadcaster-uploads:/app/uploads
       - broadcaster-sent-log:/app/sent_log
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8123/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
