@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ link.title or 'Broadcast' }} — Rollick Broadcaster</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/viewer.css">
+</head>
+<body>
+  <header class="viewer-header">
+    <div class="brand-mini">📡 Rollick</div>
+    <h1>{{ link.title or 'Broadcast' }}</h1>
+  </header>
+
+  <main class="viewer-main">
+    {% if media %}
+    <section class="media-block card">
+      {% if media.mime_type and media.mime_type.startswith('video/') %}
+        <video controls preload="metadata" playsinline style="width:100%;border-radius:var(--radius);">
+          <source src="/v/{{ link.token }}/media" type="{{ media.mime_type }}">
+          Your browser doesn't support embedded video.
+        </video>
+      {% elif media.mime_type and media.mime_type.startswith('image/') %}
+        <img src="/v/{{ link.token }}/media" alt="{{ media.file_name }}" style="width:100%;border-radius:var(--radius);">
+      {% elif media.mime_type and media.mime_type.startswith('audio/') %}
+        <audio controls preload="metadata" style="width:100%;">
+          <source src="/v/{{ link.token }}/media" type="{{ media.mime_type }}">
+        </audio>
+      {% else %}
+        <p><a class="btn" href="/v/{{ link.token }}/media" target="_blank" rel="noopener">📎 Open attached file: {{ media.file_name }}</a></p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if link.message_text %}
+    <section class="message-block card">
+      <p>{{ link.message_text }}</p>
+    </section>
+    {% endif %}
+
+    <section class="meta card">
+      <span class="pill muted">{{ link.category or 'General' }}</span>
+      <span class="muted" style="font-size: 13px;">
+        {{ comment_count }} comment{{ '' if comment_count == 1 else 's' }}
+      </span>
+    </section>
+
+    <section class="comments card">
+      <h2>Comments</h2>
+      {% if comments %}
+      <ul class="comment-list">
+        {% for c in comments %}
+        <li class="comment">
+          <div class="comment-body">{{ c.body }}</div>
+          <div class="comment-meta">{{ c.created_at[:16].replace('T', ' ') }}</div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No comments yet. Be the first to share what you think.</p>
+      {% endif %}
+
+      <!-- Comment form wires in Phase 5 -->
+      <form id="comment-form" class="comment-form" data-token="{{ link.token }}"
+            onsubmit="event.preventDefault(); alert('Comments wire in Phase 5.');">
+        <textarea name="body" placeholder="Leave a comment…" rows="3" disabled></textarea>
+        <button type="submit" class="btn" disabled>Post comment</button>
+        <p class="muted" style="font-size: 12px; margin-top: 6px;">Comments are anonymous.</p>
+      </form>
+    </section>
+  </main>
+
+  <footer class="viewer-footer">
+    <p>Powered by <b>Rollick Broadcaster</b> · <a href="#">Privacy</a></p>
+  </footer>
+</body>
+</html>

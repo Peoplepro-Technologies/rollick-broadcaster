@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from broadcaster import __version__
 from broadcaster.db import init_db
-from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts
+from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts, viewer
 from broadcaster.services import admin as admin_svc
 from broadcaster.settings import get_settings
 
@@ -56,6 +56,8 @@ app.include_router(admin_users.router)
 app.include_router(admin_groups.router)
 app.include_router(admin_content.router)
 app.include_router(admin_broadcasts.router)
+viewer.set_templates(templates)
+app.include_router(viewer.router)
 
 
 # ── Public routes ───────────────────────────────────────────────
