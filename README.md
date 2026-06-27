@@ -4,16 +4,16 @@ Full-stack broadcast app: an admin schedules broadcasts (title + media + target 
 
 See [`features.md`](./features.md) for the admin surface spec and [`BUILD_PLAN.md`](./BUILD_PLAN.md) for the build plan with rationale.
 
-## Quick start
+## Quick start (Docker — recommended)
 
 ```bash
-# 1. Setup
+# 1. Configure secrets
 cp .env.example .env
-# Edit .env: change ADMIN_PASSWORD, SESSION_SECRET, IP_HASH_PEPPER, MEDIA_SIGN_SECRET
+# Edit .env: at minimum change ADMIN_PASSWORD, SESSION_SECRET,
+# IP_HASH_PEPPER. Use 32+ random chars for SESSION_SECRET.
 
-# 2. Install + run
-pip install -r requirements.txt
-uvicorn app:app --reload
+# 2. Boot
+docker compose up -d
 
 # 3. Open
 #    Admin login:  http://localhost:8000/admin/login
@@ -21,11 +21,32 @@ uvicorn app:app --reload
 #    API docs:     http://localhost:8000/api/docs
 ```
 
-## Docker
+**Useful commands:**
+```bash
+docker compose logs -f app             # tail logs
+docker compose exec app bash          # shell into the container
+docker compose restart app            # restart after .env change
+docker compose down                   # stop (keeps volumes + DB)
+docker compose down -v                # ⚠️  stop + delete volumes (DB is gone)
+```
+
+### Optional: nightly SQLite backup
 
 ```bash
-docker build -t rollick-broadcaster .
-docker run -p 8000:8000 --env-file .env -v $(pwd)/broadcaster.db:/app/broadcaster.db -v $(pwd)/uploads:/app/uploads rollick-broadcaster
+docker compose --profile backup up -d
+```
+
+This adds a sidecar that runs `sqlite3 .backup` every 24h, writes to `./backups/`, and prunes anything older than 14 days.
+
+## Quick start (local dev, no Docker)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env: change ADMIN_PASSWORD, SESSION_SECRET, IP_HASH_PEPPER
+uvicorn app:app --reload
 ```
 
 ## Tests
@@ -34,30 +55,54 @@ docker run -p 8000:8000 --env-file .env -v $(pwd)/broadcaster.db:/app/broadcaste
 pytest -v
 ```
 
-Each test uses a fresh SQLite DB in a tmp directory; the dev DB (`broadcaster.db`) is never touched.
+Each test uses a fresh SQLite DB in a tmp directory; the dev DB is never touched. The conftest also resets the APScheduler singleton between tests.
+
+## Production checklist
+
+When deploying beyond local dev, complete these steps in order:
+
+- [ ] Set strong `ADMIN_PASSWORD`, `SESSION_SECRET` (32+ random chars), `IP_HASH_PEPPER`
+- [ ] Run behind HTTPS (Caddy / nginx + Let's Encrypt). Enable `https_only=True` on the session middleware in `app.py`
+- [ ] Uncomment the HSTS line in `app.py` (only after HTTPS is confirmed)
+- [ ] Configure real SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) and/or WhatsApp Business API credentials (`WHATSAPP_PHONE_ID`, `WHATSAPP_ACCESS_TOKEN`)
+- [ ] For WhatsApp production sends: register message templates in Meta Business Manager (free-form text only works for customer-initiated; business-initiated requires pre-approved templates — see BUILD_PLAN §8 Q5)
+- [ ] Set `BASE_PUBLIC_URL` to the public HTTPS URL
+- [ ] Mount `./backups` on durable storage if you enabled the backup sidecar
+- [ ] Set up log forwarding (the compose file already caps stdout at 10MB × 3 files)
 
 ## Project layout
 
 ```
-app.py                          ← FastAPI shell, router wiring
+app.py                          ← FastAPI shell, lifespan, security headers
 broadcaster/
   settings.py                   ← Pydantic env loader
   db.py                         ← SQLite + schema DDL
-  models/                       ← pydantic schemas (per phase)
-  routes/                       ← FastAPI routers (per phase)
-  services/                     ← business logic (whatsapp, email, links, antispam)
+  security.py                   ← bcrypt password hashing
+  routes/                       ← admin_auth, admin_users, admin_groups,
+                                   admin_content, admin_broadcasts,
+                                   admin_comments, admin_settings, viewer
+  services/
+    admin.py                    ← bootstrap + auth
+    users.py / groups.py / content.py
+    broadcasts.py / links.py
+    senders.py / whatsapp.py / email.py
+    antispam.py                 ← 9 active anti-spam layers
+    views.py / comments.py
+    analytics.py                ← totals + per-day views + CSV export
+    settings.py
+    scheduler.py                ← APScheduler for scheduled broadcasts
+    privacy.py                  ← rotating IP/UA hash with pepper
   templates/
-    base.html                   ← shared layout
-    admin/                      ← admin pages
-    viewer/                     ← public /v/{token} pages
+    base.html, admin/, viewer/
 static/
-  css/tokens.css                ← design tokens
-  css/admin.css, viewer.css
-  js/                           ← small per-page enhancements
-tests/                          ← pytest, httpx.AsyncClient
-scripts/                        ← seed.py, future migrate_from_content_scheduler.py
+  css/tokens.css, admin.css, viewer.css
+  js/users.js (admin form handlers)
+tests/                          ← 161 tests, function-scoped DB per test
+scripts/                        ← (seed.py planned)
+docker-compose.yml              ← one-command deploy
+Dockerfile                      ← non-root, healthcheck
 ```
 
 ## Build phases
 
-See [`BUILD_PLAN.md`](./BUILD_PLAN.md) §6 for the full phased plan. Current state: **Phase 0 — Scaffold** (project skeleton, schema, health endpoint, login placeholder).
+All 8 build phases + APScheduler integration are complete (see [`BUILD_PLAN.md`](./BUILD_PLAN.md)). 161 tests pass across 13 commits.

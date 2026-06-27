@@ -1,0 +1,73 @@
+# Rollick Broadcaster — one-command deploy
+#
+# First-time setup:
+#   1. cp .env.example .env  (then edit ADMIN_PASSWORD, SESSION_SECRET, etc.)
+#   2. docker compose up -d
+#   3. Open http://localhost:8000/admin/login
+#
+# Useful commands:
+#   docker compose logs -f app        # tail logs
+#   docker compose exec app bash     # shell into container
+#   docker compose down              # stop (keeps volumes)
+#   docker compose down -v           # stop + delete volumes (RESETS DB)
+
+services:
+  app:
+    build: .
+    image: rollick-broadcaster:latest
+    container_name: rollick-broadcaster
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override DATABASE_URL so SQLite lives in the mounted volume.
+      # The default in settings.py is just "broadcaster.db" — the entrypoint
+      # sets the full path inside the data/ volume.
+      DATABASE_URL: /data/broadcaster.db
+    volumes:
+      - broadcaster-data:/data
+      - broadcaster-uploads:/app/uploads
+      - broadcaster-sent-log:/app/sent_log
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: nightly SQLite backup to a host-mounted directory.
+  # Enable by `docker compose --profile backup up -d`.
+  backup:
+    image: alpine:3.20
+    container_name: rollick-backup
+    profiles: ["backup"]
+    restart: unless-stopped
+    volumes:
+      - broadcaster-data:/data:ro
+      - ./backups:/backups
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache sqlite curl >/dev/null
+        while true; do
+          ts=$$(date -u +%Y%m%dT%H%M%SZ)
+          out=/backups/broadcaster-$$ts.db
+          sqlite3 /data/broadcaster.db ".backup $$out"
+          echo "[backup] wrote $$out"
+          # Keep only the last 14 days
+          find /backups -name 'broadcaster-*.db' -mtime +14 -delete
+          sleep 86400
+        end
+
+volumes:
+  broadcaster-data:
+  broadcaster-uploads:
+  broadcaster-sent-log:
