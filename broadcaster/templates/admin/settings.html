@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Settings — {{ app_name }}{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block body %}
+{% include "admin/_nav.html" %}
+
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Settings</h1>
+      <p class="sub">Configure integrations (secrets are loaded from environment, never stored here)</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Branding</h2></div>
+    <form id="settings-form" onsubmit="submitSettings(event)">
+      <label class="field">
+        <span>App brand name</span>
+        <input name="app_brand_name" value="{{ settings.get('app_brand_name', app_name) }}">
+      </label>
+      <label class="field">
+        <span>Base public URL</span>
+        <input name="base_public_url" value="{{ settings.get('base_public_url', base_public_url) }}"
+               placeholder="https://broadcast.example.com">
+      </label>
+      <label class="field">
+        <span>Link token TTL (days)</span>
+        <input name="link_token_ttl_days" type="number" min="1" max="365"
+               value="{{ settings.get('link_token_ttl_days', '30') }}">
+      </label>
+
+      <div class="card-head" style="margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border);">
+        <h2>Anti-spam thresholds</h2>
+      </div>
+      <div class="grid-2">
+        <label class="field">
+          <span>Comments per IP per hour (per broadcast)</span>
+          <input name="comment_max_per_ip_per_hour" type="number" min="1" max="100"
+                 value="{{ settings.get('comment_max_per_ip_per_hour', '5') }}">
+        </label>
+        <label class="field">
+          <span>Comments per link (lifetime)</span>
+          <input name="comment_max_per_link_lifetime" type="number" min="1" max="20"
+                 value="{{ settings.get('comment_max_per_link_lifetime', '3') }}">
+        </label>
+      </div>
+      <label class="field">
+        <span>Comment cooldown (seconds)</span>
+        <input name="comment_cooldown_seconds" type="number" min="0" max="3600"
+               value="{{ settings.get('comment_cooldown_seconds', '30') }}">
+      </label>
+
+      <div id="settings-error" class="form-error" hidden></div>
+      <div id="settings-success" class="form-success" hidden></div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn">Save Settings</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>SMTP</h2></div>
+    <p class="muted" style="font-size: 13px;">
+      SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM are loaded
+      from environment. Use the test button to verify.
+    </p>
+    <button class="btn small" onclick="testSmtp()">📧 Send Test Email</button>
+    <div id="smtp-result" class="form-error" hidden style="margin-top: 12px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>WhatsApp</h2></div>
+    <p class="muted" style="font-size: 13px;">
+      WHATSAPP_PHONE_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET
+      are loaded from environment. Real sends happen during broadcast
+      delivery — there is no recipient-less test endpoint.
+    </p>
+    <button class="btn small secondary" onclick="testWhatsapp()">📱 Check WhatsApp</button>
+    <div id="wa-result" class="form-error" hidden style="margin-top: 12px;"></div>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function submitSettings(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const payload = {};
+  for (const [k, v] of fd.entries()) payload[k] = v;
+  const errEl = document.getElementById('settings-error');
+  const okEl = document.getElementById('settings-success');
+  errEl.hidden = okEl.hidden = true;
+  const r = await fetch('/api/settings', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) {
+    const b = await r.json();
+    okEl.textContent = `Saved ${b.saved} setting${b.saved === 1 ? '' : 's'}.`;
+    okEl.hidden = false;
+  } else {
+    const b = await r.json().catch(() => ({}));
+    errEl.textContent = b.detail || `Error ${r.status}`;
+    errEl.hidden = false;
+  }
+}
+
+async function testSmtp() {
+  const r = await fetch('/api/settings/test-smtp', { method: 'POST' });
+  const el = document.getElementById('smtp-result');
+  el.hidden = false;
+  if (r.ok) {
+    el.className = 'form-success';
+    el.textContent = 'Test email sent. Check your inbox.';
+  } else {
+    const b = await r.json().catch(() => ({}));
+    el.className = 'form-error';
+    el.textContent = b.detail || `Error ${r.status}`;
+  }
+}
+async function testWhatsapp() {
+  const r = await fetch('/api/settings/test-whatsapp', { method: 'POST' });
+  const el = document.getElementById('wa-result');
+  el.hidden = false;
+  if (r.ok) {
+    el.className = 'form-success';
+    el.textContent = 'WhatsApp credentials are set.';
+  } else {
+    const b = await r.json().catch(() => ({}));
+    el.className = 'form-error';
+    el.textContent = b.detail || `Error ${r.status}`;
+  }
+}
+</script>
+{% endblock %}

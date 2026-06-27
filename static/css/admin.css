@@ -221,3 +221,12 @@
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
 .muted { color: var(--muted); }
 .muted a { color: var(--primary); }
+
+.form-success {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--success-soft);
+  color: var(--success);
+  border-radius: var(--radius);
+  font-size: 13px;
+}

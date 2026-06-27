@@ -1,0 +1,120 @@
+"""Phase 8 — settings + security hardening."""
+from __future__ import annotations
+
+import pytest
+
+
+async def _login(client):
+    await client.post(
+        "/api/auth/login",
+        data={"username": "admin", "password": "test-admin-pass"},
+        headers={"Accept": "application/json"},
+    )
+
+
+@pytest.fixture
+async def authed_client(client):
+    await _login(client)
+    return client
+
+
+# ── Settings K/V ─────────────────────────────────────────────
+
+async def test_get_settings_empty(authed_client):
+    r = await authed_client.get("/api/settings")
+    assert r.status_code == 200
+    assert r.json() == {}
+
+
+async def test_set_and_get_settings(authed_client):
+    await authed_client.post("/api/settings", json={
+        "app_brand_name": "Acme", "link_token_ttl_days": "7",
+    })
+    r = await authed_client.get("/api/settings")
+    body = r.json()
+    assert body["app_brand_name"] == "Acme"
+    assert body["link_token_ttl_days"] == "7"
+
+
+async def test_settings_persists_across_calls(authed_client):
+    await authed_client.post("/api/settings", json={"app_brand_name": "X"})
+    await authed_client.post("/api/settings", json={"app_brand_name": "Y"})
+    r = await authed_client.get("/api/settings")
+    assert r.json()["app_brand_name"] == "Y"
+
+
+async def test_settings_rejects_secrets(authed_client):
+    r = await authed_client.post("/api/settings", json={
+        "smtp_pass": "leaked", "whatsapp_access_token": "leaked",
+        "session_secret": "leaked", "ip_hash_pepper": "leaked",
+        "media_sign_secret": "leaked", "app_brand_name": "OK",
+    })
+    body = r.json()
+    assert body["rejected"] == ["smtp_pass", "whatsapp_access_token",
+                                 "session_secret", "ip_hash_pepper",
+                                 "media_sign_secret"]
+    assert body["saved"] == 1
+    # Confirm the secret didn't make it
+    r2 = await authed_client.get("/api/settings")
+    assert "smtp_pass" not in r2.json()
+
+
+# ── SMTP/WhatsApp test buttons ─────────────────────────────
+
+async def test_test_smtp_rejects_when_not_configured(authed_client):
+    """No SMTP_HOST in test env."""
+    r = await authed_client.post("/api/settings/test-smtp")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "smtp_not_configured"
+
+
+async def test_test_whatsapp_rejects_when_not_configured(authed_client):
+    r = await authed_client.post("/api/settings/test-whatsapp")
+    assert r.status_code == 400
+    assert r.json()["detail"] == "whatsapp_not_configured"
+
+
+# ── Security headers (CSP) ─────────────────────────────────
+
+async def test_csp_header_present(client):
+    r = await client.get("/api/health")
+    csp = r.headers.get("content-security-policy")
+    assert csp is not None
+    assert "default-src 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "https://fonts.googleapis.com" in csp
+
+
+async def test_x_content_type_options_header(client):
+    r = await client.get("/api/health")
+    assert r.headers.get("x-content-type-options") == "nosniff"
+
+
+async def test_referrer_policy_header(client):
+    r = await client.get("/api/health")
+    assert r.headers.get("referrer-policy") == "no-referrer"
+
+
+async def test_csp_applies_to_viewer(client):
+    """Public viewer also gets CSP — third-party scripts can't inject."""
+    # First need a valid token; create one
+    from broadcaster.services import users as users_svc
+    from broadcaster.services import broadcasts as bc_svc
+    u = users_svc.create_user(name="A", phone="7100000001")
+    b = bc_svc.create_broadcast(title="X", user_ids=[u["id"]])
+    from broadcaster.db import get_db
+    with get_db() as conn:
+        link = conn.execute("SELECT token FROM broadcast_links WHERE broadcast_id = ?", (b["id"],)).fetchone()
+    token = link["token"]
+    r = await client.get(f"/v/{token}")
+    assert r.status_code == 200
+    assert "frame-ancestors 'none'" in r.headers.get("content-security-policy", "")
+
+
+# ── Auth ─────────────────────────────────────────────────────
+
+async def test_settings_require_auth(client):
+    r = await client.get("/api/settings")
+    assert r.status_code == 401
+    r = await client.post("/api/settings", json={"x": "y"})
+    assert r.status_code == 401

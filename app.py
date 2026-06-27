@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from broadcaster import __version__
 from broadcaster.db import init_db
-from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts, admin_comments, viewer
+from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts, admin_comments, admin_settings, viewer
 from broadcaster.services import admin as admin_svc
 from broadcaster.settings import get_settings
 
@@ -48,6 +48,31 @@ app.add_middleware(
     https_only=False,  # flip to True in production behind HTTPS
 )
 
+
+# ── Phase 8: security headers ────────────────────────────────
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    # CSP — same-origin default, allow Google Fonts (admin/login use Inter),
+    # and our own media routes. Public viewer media src is from our own host.
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "media-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    # HSTS only makes sense behind HTTPS — leave commented for the
+    # developer to enable in their reverse proxy.
+    # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -57,6 +82,7 @@ app.include_router(admin_groups.router)
 app.include_router(admin_content.router)
 app.include_router(admin_broadcasts.router)
 app.include_router(admin_comments.router)
+app.include_router(admin_settings.router)
 viewer.set_templates(templates)
 app.include_router(viewer.router)
 
@@ -199,6 +225,20 @@ def admin_comments_page(request: Request, filter: str | None = None):
          "admin": {"username": "admin"},
          "comments": comments_svc.list_all(status=status),
          "filter": filter},
+    )
+
+
+@app.get("/admin/settings", response_class=HTMLResponse)
+def admin_settings_page(request: Request):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    from broadcaster.services import settings as settings_svc
+    return templates.TemplateResponse(
+        request, "admin/settings.html",
+        {"app_name": get_settings().app_name, "active_nav": "settings",
+         "admin": {"username": "admin"},
+         "settings": settings_svc.all_visible(),
+         "base_public_url": get_settings().base_public_url},
     )
 
 
