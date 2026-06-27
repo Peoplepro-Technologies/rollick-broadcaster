@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Sign in — {{ app_name }}{% endblock %}
+{% block body_class %}login-shell{% endblock %}
+
+{% block body %}
+<div class="login-card">
+  <div class="login-logo">📡</div>
+  <h2>Sign in</h2>
+  <p class="sub">{{ app_name }} — admin console</p>
+
+  <form id="login-form" autocomplete="off">
+    <label for="username">Username</label>
+    <input id="username" name="username" required autofocus>
+
+    <label for="password" style="margin-top:14px;display:block;">Password</label>
+    <input id="password" name="password" type="password" required>
+
+    <div id="login-error" class="form-error" hidden></div>
+
+    <button type="submit" class="btn" style="width:100%;margin-top:24px;justify-content:center;">
+      Sign in
+    </button>
+  </form>
+</div>
+
+<script>
+  // Phase 1 wires the real handler. For now the form is visual only.
+  document.getElementById('login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const err = document.getElementById('login-error');
+    err.textContent = 'Auth wired in Phase 1.';
+    err.hidden = false;
+  });
+</script>
+{% endblock %}

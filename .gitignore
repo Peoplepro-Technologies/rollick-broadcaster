@@ -1,0 +1,53 @@
+# Database
+broadcaster.db
+broadcaster.db-journal
+broadcaster.db-wal
+broadcaster.db-shm
+
+# User uploads
+uploads/*
+!uploads/.gitkeep
+
+# Mock-sender output
+sent_log/*
+!sent_log/.gitkeep
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+coverage.xml
+*.cover
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
