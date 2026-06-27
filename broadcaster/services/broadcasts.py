@@ -223,7 +223,7 @@ def update_broadcast(bid: int, **fields) -> Optional[dict]:
 
 
 def schedule_broadcast(bid: int, when_iso: str) -> dict:
-    """Set status=queued + scheduled_at. Phase 4 wires the actual send."""
+    """Set status=queued + scheduled_at and register with the scheduler."""
     with get_db() as conn:
         b = conn.execute("SELECT status FROM broadcasts WHERE id = ?", (bid,)).fetchone()
         if not b:
@@ -234,6 +234,9 @@ def schedule_broadcast(bid: int, when_iso: str) -> dict:
             "UPDATE broadcasts SET scheduled_at = ?, status = 'queued' WHERE id = ?",
             (when_iso, bid),
         )
+    # Register with the scheduler (or fire immediately if overdue)
+    from broadcaster.services import scheduler as sched_svc
+    sched_svc.schedule_broadcast(bid, when_iso)
     return get_broadcast(bid)  # type: ignore[return-value]
 
 
@@ -245,6 +248,8 @@ def cancel_broadcast(bid: int) -> dict:
         if b["status"] in ("sent", "sending", "partial", "failed", "cancelled"):
             raise HTTPException(status_code=400, detail=f"cannot_cancel_{b['status']}_broadcast")
         conn.execute("UPDATE broadcasts SET status = 'cancelled' WHERE id = ?", (bid,))
+    from broadcaster.services import scheduler as sched_svc
+    sched_svc.cancel_broadcast(bid)
     return get_broadcast(bid)  # type: ignore[return-value]
 
 

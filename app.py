@@ -17,6 +17,7 @@ from broadcaster import __version__
 from broadcaster.db import init_db
 from broadcaster.routes import admin_auth, admin_users, admin_groups, admin_content, admin_broadcasts, admin_comments, admin_settings, viewer
 from broadcaster.services import admin as admin_svc
+from broadcaster.services import scheduler as sched_svc
 from broadcaster.settings import get_settings
 
 BASE_DIR = Path(__file__).parent
@@ -27,7 +28,11 @@ TEMPLATES_DIR = BASE_DIR / "broadcaster" / "templates"
 async def lifespan(app: FastAPI):
     init_db()
     admin_svc.bootstrap_admin()
-    yield
+    sched_svc.start()
+    try:
+        yield
+    finally:
+        sched_svc.shutdown()
 
 
 app = FastAPI(

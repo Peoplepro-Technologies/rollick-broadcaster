@@ -35,9 +35,19 @@ def _isolate_db(test_db_path: Path, monkeypatch):
     from broadcaster.settings import get_settings
     from broadcaster.db import init_db
     from broadcaster.services.admin import bootstrap_admin
+    from broadcaster.services.scheduler import shutdown
     get_settings.cache_clear()
     init_db()
     bootstrap_admin()
+    # Reset the scheduler singleton between tests so job state from a
+    # previous test doesn't leak.
+    try:
+        shutdown()
+    except Exception:
+        pass
+    import broadcaster.services.scheduler as sched_mod
+    sched_mod._scheduler = None
+    sched_mod._started = False
     yield
 
 
