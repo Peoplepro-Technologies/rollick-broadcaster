@@ -41,7 +41,7 @@ async def test_db_initialized_with_all_tables(app):
     expected = {
         "users", "groups", "group_memberships", "content",
         "broadcasts", "broadcast_targets", "broadcast_links",
-        "link_views", "comments", "settings",
+        "link_views", "comments", "settings", "admins",
     }
     with get_db() as conn:
         rows = conn.execute(

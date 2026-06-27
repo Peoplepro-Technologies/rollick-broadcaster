@@ -30,8 +30,10 @@ def _isolate_db(test_db_path: Path, monkeypatch):
     # Force re-init since settings are cached.
     from broadcaster.settings import get_settings
     from broadcaster.db import init_db
+    from broadcaster.services.admin import bootstrap_admin
     get_settings.cache_clear()
     init_db()
+    bootstrap_admin()
     yield
 
 

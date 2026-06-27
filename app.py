@@ -8,12 +8,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
 from broadcaster import __version__
 from broadcaster.db import init_db
+from broadcaster.routes import admin_auth
+from broadcaster.services import admin as admin_svc
 from broadcaster.settings import get_settings
 
 BASE_DIR = Path(__file__).parent
@@ -23,6 +26,7 @@ TEMPLATES_DIR = BASE_DIR / "broadcaster" / "templates"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    admin_svc.bootstrap_admin()
     yield
 
 
@@ -34,8 +38,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Session cookies signed with SESSION_SECRET. SameSite=lax is the
+# default; admin SPA needs cross-route GETs to carry the cookie.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=get_settings().session_secret,
+    session_cookie="broadcaster_session",
+    same_site="lax",
+    https_only=False,  # flip to True in production behind HTTPS
+)
+
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+app.include_router(admin_auth.router)
 
 
 # ── Public routes ───────────────────────────────────────────────
@@ -57,11 +73,19 @@ def health() -> dict:
 
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request) -> HTMLResponse:
+    error = request.query_params.get("error") == "1"
     return templates.TemplateResponse(
         request,
         "admin/login.html",
-        {"app_name": get_settings().app_name, "active_nav": None},
+        {"app_name": get_settings().app_name, "active_nav": None, "error": error},
     )
+
+
+@app.get("/admin/")
+def admin_dashboard(request: Request):
+    if admin_auth.current_admin_id(request) is None:
+        return RedirectResponse("/admin/login", status_code=303)
+    return {"app": "dashboard placeholder — Phase 1c wires Users/Groups/Content"}
 
 
 @app.get("/")
