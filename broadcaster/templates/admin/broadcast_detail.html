@@ -111,9 +111,14 @@ async function revokeLink(bid, lid) {
   else alert('Revoke failed: ' + r.status);
 }
 async function sendBroadcast(bid) {
-  if (!confirm('Send this broadcast now? Phase 4 wires the actual delivery.')) return;
-  await fetch(`/api/broadcasts/${bid}/send`, { method: 'POST' });
-  alert('Phase 4: send fan-out wires here.');
+  if (!confirm('Send this broadcast now? Recipients will get the message immediately.')) return;
+  const r = await fetch(`/api/broadcasts/${bid}/send`, { method: 'POST' });
+  if (r.ok) {
+    location.reload();
+  } else {
+    const body = await r.json().catch(() => ({}));
+    alert('Send failed: ' + (body.detail || r.status));
+  }
 }
 async function cancelBroadcast(bid) {
   if (!confirm('Cancel this broadcast?')) return;

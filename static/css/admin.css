@@ -230,3 +230,36 @@
   border-radius: var(--radius);
   font-size: 13px;
 }
+
+/* ── KPI cards (analytics block) ────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.kpi {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.kpi .label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kpi .num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.kpi .num small { font-size: 12px; font-weight: 500; }
+
+/* ── Toolbar / page-head actions ────────────────────────────── */
+.page-head { gap: 16px; flex-wrap: wrap; }
+.page-head .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

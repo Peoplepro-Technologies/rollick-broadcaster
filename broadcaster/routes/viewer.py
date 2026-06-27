@@ -46,6 +46,19 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "0.0.0.0"
 
 
+def _render_viewer_message(link: dict, token: str) -> str:
+    """Substitute {{viewer_link}} / {{link}} in the broadcast's message_text
+    so the SSR viewer shows the same link the email/WhatsApp body got.
+    Mirrors `broadcasts._render_message` but without auto-appending the
+    link when missing (the viewer is the link itself; no point appending).
+    """
+    base = get_settings().base_public_url.rstrip("/")
+    viewer_link = f"{base}/v/{token}"
+    body = (link.get("message_text") or "").strip()
+    body = body.replace("{{viewer_link}}", viewer_link).replace("{{link}}", viewer_link)
+    return body
+
+
 @router.get("/{token}", response_class=HTMLResponse)
 def viewer_page(request: Request, token: str):
     link = links_svc.resolve_token(token)
@@ -75,7 +88,7 @@ def viewer_page(request: Request, token: str):
     # Comments list (read-only for v1; Phase 5 wires the form)
     with get_db() as conn:
         comments = conn.execute(
-            "SELECT id, body, created_at FROM comments "
+            "SELECT id, body, author_hint, created_at FROM comments "
             "WHERE link_id = ? AND status = 'visible' ORDER BY created_at DESC LIMIT 20",
             (link["id"],),
         ).fetchall()
@@ -89,6 +102,7 @@ def viewer_page(request: Request, token: str):
             "comments": comments,
             "comment_count": len(comments),
             "base_public_url": get_settings().base_public_url,
+            "rendered_message": _render_viewer_message(link, token),
         },
     )
 
@@ -200,7 +214,7 @@ def list_comments(request: Request, token: str):
         raise HTTPException(status_code=410, detail="link_expired")
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, body, created_at FROM comments "
+            "SELECT id, body, author_hint, created_at FROM comments "
             "WHERE link_id = ? AND status = 'visible' ORDER BY created_at DESC LIMIT 20",
             (link["id"],),
         ).fetchall()

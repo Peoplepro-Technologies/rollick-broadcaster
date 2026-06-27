@@ -31,6 +31,15 @@ def _isolate_db(test_db_path: Path, monkeypatch):
     # and other layered checks can be exercised in tight loops.
     monkeypatch.setenv("COMMENT_COOLDOWN_SECONDS", "0")
     monkeypatch.setenv("COMMENT_MAX_PER_LINK_LIFETIME", "3")
+    # Force MockSender for tests — real SMTP/WA creds in .env must NOT
+    # leak through or tests would try to call smtp.office365.com.
+    monkeypatch.setenv("SMTP_HOST", "")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "")
+    monkeypatch.setenv("SMTP_PASS", "")
+    monkeypatch.setenv("SMTP_FROM", "")
+    monkeypatch.setenv("WHATSAPP_PHONE_ID", "")
+    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "")
     # Force re-init since settings are cached.
     from broadcaster.settings import get_settings
     from broadcaster.db import init_db
