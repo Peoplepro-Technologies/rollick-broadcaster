@@ -174,6 +174,7 @@ def admin_broadcast_detail_page(request: Request, bid: int):
     if admin_auth.current_admin_id(request) is None:
         return RedirectResponse("/admin/login", status_code=303)
     from broadcaster.services import broadcasts as bc_svc
+    from broadcaster.services import analytics as analytics_svc
     b = bc_svc.get_broadcast(bid)
     if not b:
         return HTMLResponse("Broadcast not found", status_code=404)
@@ -181,7 +182,8 @@ def admin_broadcast_detail_page(request: Request, bid: int):
         request, "admin/broadcast_detail.html",
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
          "admin": {"username": "admin"},
-         "broadcast": b, "links": bc_svc.list_links(bid)},
+         "broadcast": b, "links": bc_svc.list_links(bid),
+         "analytics": analytics_svc.broadcast_analytics(bid)},
     )
 
 

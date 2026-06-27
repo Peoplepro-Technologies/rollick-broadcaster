@@ -70,6 +70,35 @@
       </table>
     </div>
   </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Analytics</h2>
+      <div class="actions">
+        <a class="btn small secondary" href="/api/broadcasts/{{ broadcast.id }}/views.csv">⤓ Raw views (CSV)</a>
+      </div>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Links sent</div><div class="num">{{ analytics.totals.link_count }}</div></div>
+      <div class="kpi"><div class="label">Viewed</div><div class="num">{{ analytics.totals.viewed_count }}</div></div>
+      <div class="kpi"><div class="label">Total views</div><div class="num">{{ analytics.totals.total_views }}</div></div>
+      <div class="kpi"><div class="label">Unique viewers (hashed)</div><div class="num">{{ analytics.totals.unique_ips }}</div></div>
+      <div class="kpi"><div class="label">Comments</div><div class="num">{{ analytics.totals.comment_count }} <small style="color:var(--muted);font-weight:500;">(+{{ analytics.totals.hidden_count }} hidden)</small></div></div>
+      <div class="kpi"><div class="label">Revoked</div><div class="num">{{ analytics.totals.revoked_count }}</div></div>
+    </div>
+
+    {% if analytics.views_by_day %}
+    <h3 style="font-size: 14px; margin: 18px 0 8px;">Views by day (last 14)</h3>
+    <table class="table" style="font-size: 13px;">
+      <thead><tr><th>Day</th><th>Views</th></tr></thead>
+      <tbody>
+        {% for d in analytics.views_by_day %}
+        <tr><td>{{ d.day }}</td><td>{{ d.n }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
 </main>
 {% endblock %}
 

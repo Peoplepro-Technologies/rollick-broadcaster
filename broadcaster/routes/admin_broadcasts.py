@@ -92,3 +92,22 @@ def revoke_link(bid: int, lid: int):
     if not links_svc.revoke_link(lid):
         raise HTTPException(status_code=404, detail="not_found")
     return {"ok": True}
+
+
+# ── Analytics ────────────────────────────────────────────────
+
+@router.get("/{bid}/analytics")
+def analytics(bid: int):
+    from broadcaster.services import analytics as analytics_svc
+    return analytics_svc.broadcast_analytics(bid)
+
+
+@router.get("/{bid}/views.csv")
+def views_csv(bid: int):
+    from broadcaster.services import analytics as analytics_svc
+    from fastapi.responses import Response
+    return Response(
+        content=analytics_svc.raw_views_csv(bid),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="broadcast-{bid}-views.csv"'},
+    )
