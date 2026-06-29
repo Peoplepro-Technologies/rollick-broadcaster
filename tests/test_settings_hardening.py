@@ -43,20 +43,25 @@ async def test_settings_persists_across_calls(authed_client):
     assert r.json()["app_brand_name"] == "Y"
 
 
-async def test_settings_rejects_secrets(authed_client):
+async def test_settings_rejects_server_secrets(authed_client):
+    """Server-internal secrets (session_secret, ip_hash_pepper,
+    media_sign_secret) must NEVER be settable from the UI. User-supplied
+    credentials (smtp_pass, whatsapp_access_token, whatsapp_app_secret)
+    ARE settable — they're stored in the DB."""
     r = await authed_client.post("/api/settings", json={
-        "smtp_pass": "leaked", "whatsapp_access_token": "leaked",
         "session_secret": "leaked", "ip_hash_pepper": "leaked",
         "media_sign_secret": "leaked", "app_brand_name": "OK",
     })
     body = r.json()
-    assert body["rejected"] == ["smtp_pass", "whatsapp_access_token",
-                                 "session_secret", "ip_hash_pepper",
+    assert body["rejected"] == ["session_secret", "ip_hash_pepper",
                                  "media_sign_secret"]
     assert body["saved"] == 1
-    # Confirm the secret didn't make it
+    # Confirm none of the rejected secrets made it to the DB
     r2 = await authed_client.get("/api/settings")
-    assert "smtp_pass" not in r2.json()
+    keys = r2.json().keys()
+    assert "session_secret" not in keys
+    assert "ip_hash_pepper" not in keys
+    assert "media_sign_secret" not in keys
 
 
 # ── SMTP/WhatsApp test buttons ─────────────────────────────
