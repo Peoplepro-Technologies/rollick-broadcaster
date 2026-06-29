@@ -89,7 +89,8 @@ def viewer_page(request: Request, token: str):
                 (link["content_id"],),
             ).fetchone()
         if row:
-            file_path = Path(row["content_data"])
+            from broadcaster.services.content import _resolve_content_path
+            file_path = _resolve_content_path(row["content_data"])
             if file_path.exists():
                 media = dict(row)
             else:
@@ -144,7 +145,8 @@ def viewer_media(request: Request, token: str):
         ).fetchone()
     if not row:
         return JSONResponse({"error": "media_missing"}, status_code=404)
-    path = Path(row["content_data"])
+    from broadcaster.services.content import _resolve_content_path
+    path = _resolve_content_path(row["content_data"])
     if not path.exists():
         return JSONResponse({"error": "file_missing"}, status_code=404)
     return FileResponse(

@@ -58,8 +58,7 @@ def serve_media(cid: int):
     c = content_svc.get_content(cid)
     if not c or c["content_type"] != "media":
         raise HTTPException(status_code=404, detail="not_found")
-    from pathlib import Path
-    path = Path(c["content_data"])
+    path = content_svc._resolve_content_path(c["content_data"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="file_missing")
     return FileResponse(

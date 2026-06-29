@@ -124,6 +124,46 @@ async def test_serve_media_returns_file(authed_client, tmp_path, monkeypatch):
     assert r.content == b"binary-content"
 
 
+async def test_serve_media_resolves_when_upload_root_differs_from_cwd(
+    authed_client, tmp_path, monkeypatch
+):
+    """Regression: when the upload root (sibling of the DB file) lives
+    in a directory OTHER than the process CWD — e.g. /data/uploads while
+    CWD is /app inside the container — the download endpoint must still
+    serve the file. Pre-fix this returned 404 file_missing because
+    `Path("uploads/xxx")` was resolved against CWD instead of the upload
+    root."""
+    from broadcaster.settings import get_settings
+
+    # Put the DB and the upload dir under tmp_path, but chdir to a
+    # *different* tmp_path so the bug condition is reproduced.
+    db_dir = tmp_path / "data"
+    db_dir.mkdir()
+    monkeypatch.setenv("DATABASE_URL", str(db_dir / "broadcaster.db"))
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    files = {"file": ("video.mp4", io.BytesIO(b"video-bytes"), "video/mp4")}
+    cr = await authed_client.post("/api/content/media", files=files)
+    cid = cr.json()["id"]
+
+    # The download endpoint must succeed even though CWD's 'uploads/'
+    # is empty — the file lives under db_dir / 'uploads' instead.
+    r = await authed_client.get(f"/api/content/file/{cid}")
+    assert r.status_code == 200, r.text
+    assert r.content == b"video-bytes"
+
+    # And the stored path must be absolute (not CWD-relative).
+    from broadcaster.db import get_db
+    with get_db() as conn:
+        stored = conn.execute(
+            "SELECT content_data FROM content WHERE id = ?", (cid,)
+        ).fetchone()["content_data"]
+    from pathlib import Path
+    assert Path(stored).is_absolute(), f"expected absolute path, got: {stored}"
+
+
 async def test_serve_media_404_for_text(authed_client):
     cr = await authed_client.post("/api/content/text", json={"body": "x"})
     cid = cr.json()["id"]

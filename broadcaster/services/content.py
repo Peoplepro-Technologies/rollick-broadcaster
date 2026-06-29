@@ -31,6 +31,20 @@ def _upload_root() -> Path:
     return Path(get_settings().database_url).parent / UPLOAD_DIR_NAME
 
 
+def _resolve_content_path(stored: str) -> Path:
+    """Resolve a stored `content_data` string for a media row into an
+    absolute filesystem path.
+
+    New rows store absolute paths (see `create_media`). Pre-fix rows may
+    have a relative string like 'uploads/<uuid>_<name>' — those resolve
+    against the upload root, since that's where the file was actually
+    written. We try both interpretations so legacy rows still work."""
+    p = Path(stored)
+    if p.is_absolute():
+        return p
+    return _upload_root() / p
+
+
 # ── List / get ────────────────────────────────────────────────
 
 def list_content() -> list[dict]:
@@ -85,13 +99,17 @@ def create_media(file: UploadFile, caption: Optional[str]) -> dict:
     dest.write_bytes(contents)
 
     mime = file.content_type or "application/octet-stream"
-    rel_path = f"{UPLOAD_DIR_NAME}/{safe_name}"
+    # Store an ABSOLUTE path so the download endpoint can resolve the
+    # file regardless of process CWD (the upload root may live in a
+    # completely different directory from where the server was started,
+    # e.g. /data/uploads inside the container while CWD is /app).
+    abs_path = str(dest.resolve())
 
     with get_db() as conn:
         cur = conn.execute(
             "INSERT INTO content (content_type, caption, content_data, file_name, file_size, mime_type, created_at) "
             "VALUES ('media', ?, ?, ?, ?, ?, ?)",
-            (caption or None, rel_path, original, len(contents), mime, _now()),
+            (caption or None, abs_path, original, len(contents), mime, _now()),
         )
     return get_content(cur.lastrowid)  # type: ignore[return-value]
 
@@ -108,7 +126,7 @@ def delete_content(cid: int) -> bool:
         # If media, also remove the file from disk
         if row["content_type"] == "media" and row["content_data"]:
             try:
-                Path(row["content_data"]).unlink(missing_ok=True)
+                _resolve_content_path(row["content_data"]).unlink(missing_ok=True)
             except OSError:
                 pass  # best-effort; row is the source of truth
         conn.execute("DELETE FROM content WHERE id = ?", (cid,))
