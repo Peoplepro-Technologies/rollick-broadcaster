@@ -9,13 +9,144 @@
   <div class="page-head">
     <div>
       <h1>Dashboard</h1>
-      <p class="sub">Overview of users, groups, and broadcasts</p>
+      <p class="sub">Operational snapshot of your broadcasts.</p>
     </div>
   </div>
 
-  <div class="card">
-    <h2>Welcome 👋</h2>
-    <p>Phase 1 dashboard placeholder. The real KPIs (Users · Groups · Broadcasts · Views 7d) wire in once Groups and Broadcasts land in Phase 1c/2.</p>
+  {# ── KPI tiles ──────────────────────────────────────────── #}
+  <div class="kpi-grid">
+    {% set k = overview.kpis %}
+    <a class="kpi-tile" href="/admin/users">
+      <span class="kpi-label">Users</span>
+      <span class="kpi-value">{{ "{:,}".format(k.users_total) }}</span>
+      <span class="kpi-sub">{{ k.users_new_week }} new this week</span>
+    </a>
+    <a class="kpi-tile" href="/admin/users">
+      <span class="kpi-label">Active users</span>
+      <span class="kpi-value">{{ "{:,}".format(k.users_active) }}</span>
+      <span class="kpi-sub">{{ k.users_total - k.users_active }} inactive</span>
+    </a>
+    <a class="kpi-tile" href="/admin/broadcasts">
+      <span class="kpi-label">Broadcasts</span>
+      <span class="kpi-value">{{ "{:,}".format(k.broadcasts_total) }}</span>
+      <span class="kpi-sub">all-time</span>
+    </a>
+    <a class="kpi-tile" href="/admin/broadcasts">
+      <span class="kpi-label">Views (7d)</span>
+      <span class="kpi-value">{{ "{:,}".format(k.views_week) }}</span>
+      <span class="kpi-sub">across all broadcasts</span>
+    </a>
+    <a class="kpi-tile" href="/admin/comments">
+      <span class="kpi-label">Comments (7d)</span>
+      <span class="kpi-value">{{ "{:,}".format(k.comments_week) }}</span>
+      <span class="kpi-sub">visible</span>
+    </a>
+    <a class="kpi-tile {% if k.pending_mod %}kpi-warn{% endif %}" href="/admin/comments">
+      <span class="kpi-label">To moderate</span>
+      <span class="kpi-value">{{ "{:,}".format(k.pending_mod) }}</span>
+      <span class="kpi-sub">{% if k.pending_mod %}oldest first{% else %}all clear{% endif %}</span>
+    </a>
+  </div>
+
+  {# ── Chart + Recent broadcasts ──────────────────────────── #}
+  <div class="dash-row">
+    <div class="card dash-card-wide">
+      <div class="card-head"><h2>Views — last 14 days</h2></div>
+      <canvas id="views-chart" height="120"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h2>Recent broadcasts</h2>
+        <a class="muted small" href="/admin/broadcasts">View all →</a>
+      </div>
+      <table class="data-table compact">
+        <thead><tr><th>Title</th><th>Status</th><th>Views</th></tr></thead>
+        <tbody>
+        {% for b in overview.recent_broadcasts %}
+          <tr>
+            <td><a href="/admin/broadcasts/{{ b.id }}">{{ b.title }}</a>
+              <div class="muted small">{{ b.category or '—' }}</div></td>
+            <td><span class="pill {{ _status_pill_class(b.status) }}">{{ b.status }}</span></td>
+            <td>{{ b.view_count }} / {{ b.link_count }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3" class="muted">No broadcasts yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Pending comments + Quick links ─────────────────────── #}
+  <div class="dash-row">
+    <div class="card">
+      <div class="card-head">
+        <h2>Pending comments</h2>
+        <a class="muted small" href="/admin/comments">Open queue →</a>
+      </div>
+      <ul class="pending-list">
+      {% for c in overview.pending_comments %}
+        <li>
+          <a href="/admin/comments">{{ c.body[:80] }}{% if c.body|length > 80 %}…{% endif %}</a>
+          <span class="muted small">— {{ c.broadcast_title }} · {{ c.created_at[:10] }}</span>
+        </li>
+      {% else %}
+        <li class="muted">No comments to review.</li>
+      {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Quick links</h2></div>
+      <div class="quick-links">
+        <a class="btn primary" href="/admin/broadcasts/new">+ New Broadcast</a>
+        <a class="btn" href="/admin/users">↑ Upload Users</a>
+        <a class="btn" href="/admin/groups">Manage Groups</a>
+        <a class="btn" href="/admin/content">Content Library</a>
+      </div>
+    </div>
   </div>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  (function () {
+    const data = {{ overview.views_by_day | tojson }};
+    const labels = data.map(d => d.date.slice(5));
+    const values = data.map(d => d.views);
+    const ctx = document.getElementById('views-chart');
+    try {
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Views',
+            data: values,
+            borderColor: '#ED0E6D',
+            backgroundColor: 'rgba(237, 14, 109, 0.12)',
+            fill: true, tension: 0.35, pointRadius: 3,
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false } },
+            y: { beginAtZero: true, ticks: { precision: 0 } }
+          }
+        }
+      });
+    } catch (e) {
+      // Fallback: render a static table if Chart.js failed to load.
+      const table = document.createElement('table');
+      table.className = 'data-table compact';
+      table.innerHTML = '<thead><tr><th>Date</th><th>Views</th></tr></thead><tbody>'
+        + data.map(d => '<tr><td>' + d.date + '</td><td>' + d.views + '</td></tr>').join('')
+        + '</tbody>';
+      ctx.replaceWith(table);
+    }
+  })();
+</script>
 {% endblock %}

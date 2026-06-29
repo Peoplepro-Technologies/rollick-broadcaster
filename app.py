@@ -81,6 +81,22 @@ async def add_security_headers(request, call_next):
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+
+def _status_pill_class(status: str) -> str:
+    """Map a broadcast status string to an admin.css .pill modifier class."""
+    return {
+        "sent": "success",
+        "queued": "info",
+        "scheduled": "info",
+        "draft": "muted",
+        "sending": "warning",
+        "failed": "danger",
+        "cancelled": "muted",
+    }.get(status, "muted")
+
+
+templates.env.globals["_status_pill_class"] = _status_pill_class
+
 app.include_router(admin_auth.router)
 app.include_router(admin_users.router)
 app.include_router(admin_groups.router)
