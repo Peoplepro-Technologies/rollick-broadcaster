@@ -35,13 +35,24 @@ def _resolve_content_path(stored: str) -> Path:
     """Resolve a stored `content_data` string for a media row into an
     absolute filesystem path.
 
-    New rows store absolute paths (see `create_media`). Pre-fix rows may
-    have a relative string like 'uploads/<uuid>_<name>' — those resolve
-    against the upload root, since that's where the file was actually
-    written. We try both interpretations so legacy rows still work."""
+    New rows store absolute paths (see `create_media`). Pre-fix rows
+    had a relative string like 'uploads/<uuid>_<name>' that was meant
+    relative to the DATA directory (parent of the SQLite file) — the
+    implicit container convention was that uploads lived next to the
+    DB. We resolve relative paths against the data-dir first (legacy),
+    then fall back to the upload root in case the convention ever
+    diverged."""
     p = Path(stored)
     if p.is_absolute():
         return p
+    # Legacy: 'uploads/...' was relative to the DB's parent dir.
+    # E.g. DATABASE_URL=/data/broadcaster.db → file lived at
+    # /data/uploads/<name>.
+    data_dir = Path(get_settings().database_url).parent
+    legacy = data_dir / p
+    if legacy.exists():
+        return legacy
+    # Fallback: against the upload root directly.
     return _upload_root() / p
 
 

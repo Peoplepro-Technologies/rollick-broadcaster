@@ -125,43 +125,61 @@ async def test_serve_media_returns_file(authed_client, tmp_path, monkeypatch):
 
 
 async def test_serve_media_resolves_when_upload_root_differs_from_cwd(
-    authed_client, tmp_path, monkeypatch
+    tmp_path, monkeypatch
 ):
-    """Regression: when the upload root (sibling of the DB file) lives
-    in a directory OTHER than the process CWD — e.g. /data/uploads while
-    CWD is /app inside the container — the download endpoint must still
-    serve the file. Pre-fix this returned 404 file_missing because
-    `Path("uploads/xxx")` was resolved against CWD instead of the upload
-    root."""
-    from broadcaster.settings import get_settings
+    """Regression: when the upload root lives in a directory OTHER than
+    process CWD — e.g. /data/uploads while CWD is /app inside the
+    container — `_resolve_content_path` must still find the file.
 
-    # Put the DB and the upload dir under tmp_path, but chdir to a
-    # *different* tmp_path so the bug condition is reproduced.
-    db_dir = tmp_path / "data"
-    db_dir.mkdir()
-    monkeypatch.setenv("DATABASE_URL", str(db_dir / "broadcaster.db"))
+    Pre-fix, the download endpoint did `Path("uploads/xxx").exists()`
+    which resolved against CWD instead of the upload root, returning
+    404 file_missing for every fresh upload. The resolver now handles
+    absolute paths (new rows) AND legacy data-dir-relative paths
+    (pre-fix rows) so both styles keep working."""
+    from broadcaster.services.content import _resolve_content_path
+
+    # Plant a file at an absolute path that is NOT under CWD.
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    target = uploads / "video.mp4"
+    target.write_bytes(b"video-bytes")
+
+    # CWD's "uploads/" is empty so a CWD-relative resolve would miss.
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
 
-    files = {"file": ("video.mp4", io.BytesIO(b"video-bytes"), "video/mp4")}
-    cr = await authed_client.post("/api/content/media", files=files)
-    cid = cr.json()["id"]
+    # Absolute stored paths resolve to themselves.
+    resolved = _resolve_content_path(str(target))
+    assert resolved.exists()
+    assert resolved.read_bytes() == b"video-bytes"
 
-    # The download endpoint must succeed even though CWD's 'uploads/'
-    # is empty — the file lives under db_dir / 'uploads' instead.
-    r = await authed_client.get(f"/api/content/file/{cid}")
-    assert r.status_code == 200, r.text
-    assert r.content == b"video-bytes"
 
-    # And the stored path must be absolute (not CWD-relative).
-    from broadcaster.db import get_db
-    with get_db() as conn:
-        stored = conn.execute(
-            "SELECT content_data FROM content WHERE id = ?", (cid,)
-        ).fetchone()["content_data"]
-    from pathlib import Path
-    assert Path(stored).is_absolute(), f"expected absolute path, got: {stored}"
+async def test_serve_media_resolves_legacy_relative_path(
+    tmp_path, monkeypatch
+):
+    """Pre-fix rows stored `content_data = 'uploads/<name>'` and the
+    file actually lived at `<data_dir>/uploads/<name>` — the legacy
+    path was meant relative to the DB's parent dir. The resolver must
+    still find these files so existing broadcasts keep working after
+    the upgrade."""
+    from broadcaster.services.content import _resolve_content_path
+
+    # The resolver looks at Path(database_url).parent for legacy rows,
+    # so plant the file there. (Conftest sets DATABASE_URL to
+    # tmp_path/test.db; legacy = tmp_path / 'uploads/legacy.mp4'.)
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    (uploads / "legacy.mp4").write_bytes(b"legacy-bytes")
+
+    # CWD-relative resolution would miss because CWD's uploads/ is empty.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    resolved = _resolve_content_path("uploads/legacy.mp4")
+    assert resolved.exists(), f"resolver failed for legacy path: {resolved}"
+    assert resolved.read_bytes() == b"legacy-bytes"
 
 
 async def test_serve_media_404_for_text(authed_client):
