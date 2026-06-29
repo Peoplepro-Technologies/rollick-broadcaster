@@ -83,6 +83,7 @@ async def test_csp_header_present(client):
     assert "default-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
     assert "https://fonts.googleapis.com" in csp
+    assert "https://cdn.jsdelivr.net" in csp
 
 
 async def test_x_content_type_options_header(client):
