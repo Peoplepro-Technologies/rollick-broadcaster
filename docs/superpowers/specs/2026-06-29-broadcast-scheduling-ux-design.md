@@ -172,7 +172,7 @@ New optional kwarg `scheduled_at: str | None = None`. Behavior:
 
 ### `services/broadcasts.schedule_broadcast(bid, when_iso)` (no functional change)
 
-Already validates past-time, returns `broadcast` dict. Tighten by importing the same past-check so client + server agree.
+Already validates past-time and returns the `broadcast` dict. Refactor the past-time check into a small private helper `_validate_future_iso(scheduled_at: str) -> str` in `services/broadcasts.py` and call it from both `create_broadcast` and `schedule_broadcast` so client and server share one definition.
 
 ### `services/scheduler`
 
@@ -194,7 +194,7 @@ No change.
 | App down at fire-time                      | Already handled by `rehydrate_pending` (every 30s + on startup); fires within 30s of restart.                   |
 | User reschedules a queued broadcast        | Same picker form, `/schedule` endpoint with `replace_existing=True`. Status stays `queued`.                      |
 | Two browsers schedule the same broadcast   | Last write wins; second client sees the updated time on next refresh. We accept this race for v1.                |
-| Form submitted with mode=Draft but time set | Strip the time before insert; treat as draft. Add server-side guard to reject ambiguous payloads (HTTP 400).      |
+| Form submitted with `mode='draft'` AND `scheduled_at` set | Reject with HTTP 400 `ambiguous_schedule_payload`. Frontend prevents this; the server guard is the contract. |
 | `_tz` field included                       | Server ignores; not part of the contract.                                                                        |
 | DST transition in Asia/Kolkata             | No DST in IST; safe.                                                                                             |
 
@@ -207,6 +207,7 @@ No change.
 - `tests/test_broadcasts.py`:
   - `test_create_with_future_scheduled_at_creates_queued` — POST with `scheduled_at` in future → response has `status='queued'`, scheduler called.
   - `test_create_with_past_scheduled_at_returns_400` — POST with past time → HTTP 400 `scheduled_at_in_past`.
+  - `test_create_with_draft_mode_and_scheduled_at_returns_400` — POST with `mode='draft'` and a `scheduled_at` set → HTTP 400 `ambiguous_schedule_payload`.
   - `test_create_without_scheduled_at_creates_draft` — unchanged behavior.
   - `test_reschedule_via_schedule_endpoint_replaces_scheduler_job` — call `/schedule` twice with different future times; assert only one APScheduler job exists for `broadcast:{bid}`.
 - `tests/test_scheduler.py`:
