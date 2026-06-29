@@ -31,6 +31,23 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _validate_future_iso(scheduled_at: str) -> str:
+    """Parse an ISO datetime string, ensure it's in the future (UTC).
+
+    Returns the normalised ISO string (with timezone). Raises HTTP 400 on
+    invalid or past datetimes so client and server share one definition.
+    """
+    try:
+        dt = datetime.fromisoformat(scheduled_at)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="scheduled_at_invalid")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if dt <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="scheduled_at_in_past")
+    return dt.isoformat()
+
+
 # ── Create ────────────────────────────────────────────────────
 
 def create_broadcast(

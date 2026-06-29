@@ -1,7 +1,11 @@
 """Phase 2 — Broadcast create + link generation + state transitions."""
 from __future__ import annotations
 
+from datetime import datetime, timezone, timedelta
+
 import pytest
+
+from broadcaster.services import broadcasts as bc_svc
 
 
 async def _login(client):
@@ -30,6 +34,41 @@ async def _make_users(client, *tuples):
         assert r.status_code == 200, r.text
         ids.append(r.json()["id"])
     return ids
+
+
+# ── _validate_future_iso ─────────────────────────────────────
+
+
+def test_validate_future_iso_returns_iso_for_future_utc():
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    out = bc_svc._validate_future_iso(future)
+    # round-trip parse
+    parsed = datetime.fromisoformat(out)
+    assert parsed > datetime.now(timezone.utc)
+
+
+def test_validate_future_iso_rejects_past_with_400():
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        bc_svc._validate_future_iso(past)
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "scheduled_at_in_past"
+
+
+def test_validate_future_iso_rejects_naive_datetime():
+    past_naive = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        bc_svc._validate_future_iso(past_naive)
+    assert exc.value.detail == "scheduled_at_in_past"
+
+
+def test_validate_future_iso_rejects_garbage():
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        bc_svc._validate_future_iso("not-a-date")
+    assert exc.value.detail == "scheduled_at_invalid"
 
 
 # ── Create ────────────────────────────────────────────────────
