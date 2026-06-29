@@ -386,3 +386,16 @@ async def test_compose_form_renders_picker_block(client):
     assert 'name="_schedule_mode"' in html
     assert 'name="_scheduled_at_local"' in html
     assert 'class="when-block"' in html
+
+
+async def test_list_emits_data_scheduled_at_marker(client):
+    await _login(client)
+    a, = await _make_users(client, ("A", "1000000095", "", ""))
+    future_iso = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    await client.post("/api/broadcasts", json={
+        "title": "Listable", "user_ids": [a],
+        "scheduled_at": future_iso, "mode": "schedule",
+    })
+    r = await client.get("/admin/broadcasts")
+    assert r.status_code == 200
+    assert 'data-scheduled-at="' in r.text
