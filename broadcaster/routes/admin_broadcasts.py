@@ -36,6 +36,8 @@ def create_broadcast(payload: dict, request_admin_id: int = Depends(require_admi
         user_ids=payload.get("user_ids") or [],
         generate_links=bool(payload.get("generate_links", True)),
         created_by=creator["username"] if creator else None,
+        scheduled_at=payload.get("scheduled_at"),
+        mode=payload.get("mode", "draft"),
     )
 
 

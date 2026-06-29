@@ -16,7 +16,7 @@ Status state machine for v1 (Phase 4 adds 'sending'/'sent'/'partial'/'failed'):
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Iterable, Optional
 
 from fastapi import HTTPException
@@ -60,11 +60,30 @@ def create_broadcast(
     user_ids: Optional[Iterable[int]] = None,
     generate_links: bool = True,
     created_by: Optional[str] = None,
+    scheduled_at: Optional[str] = None,
+    mode: str = "draft",
 ) -> dict:
     if not title or not title.strip():
         raise HTTPException(status_code=400, detail="title_required")
     if delivery_channel not in ("whatsapp", "email", "both"):
         raise HTTPException(status_code=400, detail="invalid_delivery_channel")
+
+    if mode not in ("draft", "schedule", "send_now"):
+        raise HTTPException(status_code=400, detail="invalid_mode")
+    if mode == "draft" and scheduled_at:
+        raise HTTPException(status_code=400, detail="ambiguous_schedule_payload")
+    if mode == "send_now" and scheduled_at:
+        raise HTTPException(status_code=400, detail="ambiguous_schedule_payload")
+
+    initial_status = "draft"
+    normalised_scheduled_at: Optional[str] = None
+    if scheduled_at is not None:
+        normalised_scheduled_at = _validate_future_iso(scheduled_at)
+        initial_status = "queued"
+    if mode == "send_now":
+        initial_status = "queued"
+        if normalised_scheduled_at is None:
+            normalised_scheduled_at = (datetime.now(timezone.utc) + timedelta(seconds=5)).isoformat()
 
     group_ids = list(group_ids or [])
     user_ids = list(user_ids or [])
@@ -77,10 +96,12 @@ def create_broadcast(
     with get_db() as conn:
         cur = conn.execute(
             "INSERT INTO broadcasts (title, category, message_text, content_id, "
-            "delivery_channel, generate_links, created_by, created_at, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')",
+            "delivery_channel, generate_links, created_by, created_at, "
+            "scheduled_at, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (title.strip(), category or "General", message_text, content_id,
-             delivery_channel, 1 if generate_links else 0, created_by, now_str),
+             delivery_channel, 1 if generate_links else 0, created_by, now_str,
+             normalised_scheduled_at, initial_status),
         )
         bid = cur.lastrowid
         for gid in group_ids:
@@ -100,6 +121,10 @@ def create_broadcast(
         link_info = links_svc.generate_links_for_broadcast(
             broadcast_id=bid, user_ids=recipients, ttl_days=settings.link_token_ttl_days,
         )
+
+    if initial_status == "queued" and normalised_scheduled_at is not None:
+        from broadcaster.services import scheduler as sched_svc
+        sched_svc.schedule_broadcast(bid, normalised_scheduled_at)
 
     b = get_broadcast(bid)
     b["link_info"] = link_info

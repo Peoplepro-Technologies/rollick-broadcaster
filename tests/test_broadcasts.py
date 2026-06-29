@@ -104,6 +104,51 @@ async def test_create_broadcast_with_group(authed_client):
     assert body["link_info"]["created"] == 2
 
 
+async def test_create_with_future_scheduled_at_creates_queued(authed_client):
+    a, = await _make_users(authed_client, ("A", "1000000091", "", ""))
+    future_iso = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    r = await authed_client.post("/api/broadcasts", json={
+        "title": "Scheduled", "user_ids": [a],
+        "scheduled_at": future_iso, "mode": "schedule",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "queued"
+    assert body["scheduled_at"] is not None
+
+
+async def test_create_with_past_scheduled_at_returns_400(authed_client):
+    a, = await _make_users(authed_client, ("A", "1000000092", "", ""))
+    past_iso = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    r = await authed_client.post("/api/broadcasts", json={
+        "title": "Past", "user_ids": [a],
+        "scheduled_at": past_iso, "mode": "schedule",
+    })
+    assert r.status_code == 400
+    assert r.json()["detail"] == "scheduled_at_in_past"
+
+
+async def test_create_with_draft_mode_and_scheduled_at_returns_400(authed_client):
+    a, = await _make_users(authed_client, ("A", "1000000093", "", ""))
+    future_iso = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    r = await authed_client.post("/api/broadcasts", json={
+        "title": "Ambiguous", "user_ids": [a],
+        "scheduled_at": future_iso, "mode": "draft",
+    })
+    assert r.status_code == 400
+    assert r.json()["detail"] == "ambiguous_schedule_payload"
+
+
+async def test_create_with_garbage_scheduled_at_returns_400(authed_client):
+    a, = await _make_users(authed_client, ("A", "1000000094", "", ""))
+    r = await authed_client.post("/api/broadcasts", json={
+        "title": "Garbage", "user_ids": [a],
+        "scheduled_at": "not-a-date", "mode": "schedule",
+    })
+    assert r.status_code == 400
+    assert r.json()["detail"] == "scheduled_at_invalid"
+
+
 async def test_create_broadcast_mixes_groups_and_users_deduped(authed_client):
     a, b, c = await _make_users(authed_client,
                                  ("A", "3000000001", "Eng", "BLR"),
