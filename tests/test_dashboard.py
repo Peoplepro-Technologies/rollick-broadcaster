@@ -136,3 +136,56 @@ def test_dashboard_overview_excludes_hidden_comments_from_week_and_queue():
     assert out["kpis"]["pending_mod"] == 1
     assert len(out["pending_comments"]) == 1
     assert out["pending_comments"][0]["body"] == "vis"
+
+
+# ── /admin/ route ───────────────────────────────────────────
+
+
+async def test_dashboard_requires_auth(client):
+    r = await client.get("/admin/", follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert "/admin/login" in r.headers["location"]
+
+
+async def test_dashboard_renders(authed_client):
+    r = await authed_client.get("/admin/")
+    assert r.status_code == 200
+    assert "Dashboard" in r.text
+    assert "Operational snapshot" in r.text
+
+
+async def test_dashboard_empty_state(authed_client):
+    """Fresh DB: KPIs render as 0, fallback copy visible, no crash."""
+    r = await authed_client.get("/admin/")
+    assert r.status_code == 200
+    assert "0</span>" in r.text            # kpi-value rendered for each tile
+    assert "No broadcasts yet" in r.text
+    assert "No comments to review" in r.text
+    assert "all clear" in r.text
+
+
+async def test_dashboard_seeded_state(authed_client):
+    """Seeded data shows real numbers in the rendered HTML."""
+    users = [users_svc.create_user(name=f"U{i}", phone=f"72000000{i:02d}")
+             for i in range(3)]
+    b = bc_svc.create_broadcast(
+        title="Promo June", user_ids=[u["id"] for u in users])
+    with get_db() as conn:
+        link_id = conn.execute(
+            "SELECT id FROM broadcast_links WHERE broadcast_id = ?",
+            (b["id"],)).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO link_views (link_id, viewed_at, ip_hash, ua_hash) "
+            "VALUES (?, datetime('now'), 'h', 'u')", (link_id,))
+        conn.commit()
+
+    r = await authed_client.get("/admin/")
+    assert r.status_code == 200
+    # KPI tile values: users_total=3, broadcasts_total=1, views_week=1
+    assert ">3<" in r.text
+    assert ">1<" in r.text
+    # Recent broadcasts table shows the broadcast title
+    assert "Promo June" in r.text
+    # Chart.js script tag and views_by_day JSON are embedded
+    assert "cdn.jsdelivr.net" in r.text
+    assert '"views":' in r.text
