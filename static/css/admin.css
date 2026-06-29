@@ -435,3 +435,20 @@
 @media (max-width: 600px) {
   .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ── Schedule picker ─────────────────────────────────────── */
+.when-block { border: 1px solid var(--border, #e2e8f0); border-radius: 8px;
+              padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.when-block legend { font-weight: 600; padding: 0 8px; }
+.radio-card    { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+                 border-radius: 6px; cursor: pointer; }
+.radio-card:hover { background: rgba(0,0,0,0.03); }
+.radio-card input { margin: 0; }
+.chip-row      { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 28px; }
+.chip          { background: #fff; border: 1px solid var(--primary, #ED0E6D);
+                 color: var(--primary, #ED0E6D); border-radius: 999px; padding: 4px 12px;
+                 cursor: pointer; font-size: 13px; }
+.chip:hover, .chip.active { background: var(--primary, #ED0E6D); color: #fff; }
+.custom-row    { display: flex; flex-direction: column; gap: 4px; padding: 4px 28px; }
+.field-warning { padding: 4px 28px; color: #b45309; font-size: 13px; }
+.tz-hint       { color: var(--muted, #64748b); font-size: 12px; }

@@ -3,6 +3,7 @@
 {% block body_class %}app-shell{% endblock %}
 
 {% block body %}
+{% import "admin/_schedule_picker.html" as sp %}
 {% include "admin/_nav.html" %}
 
 <main class="main">
@@ -90,11 +91,13 @@
         <span><b>Generate unique per-subscriber links</b> (recommended) — each user gets a unique URL with their own token</span>
       </label>
 
+      {{ sp.schedule_picker("schedule", "") }}
+
       <div id="compose-error" class="form-error" hidden></div>
 
       <div class="form-actions">
         <a href="/admin/broadcasts" class="btn secondary">Cancel</a>
-        <button type="submit" class="btn success">Save as Draft</button>
+        <button type="submit" class="btn success" data-submit-button>Schedule</button>
       </div>
     </form>
   </div>
@@ -105,17 +108,27 @@
 <script>
 async function submitCompose(ev) {
   ev.preventDefault();
-  const fd = new FormData(ev.target);
-  const group_ids = fd.getAll('group_ids').map(Number);
-  const user_ids = fd.getAll('user_ids').map(Number);
+  const form = ev.target;
+  const fd = new FormData(form);
+  const mode = fd.get("_schedule_mode") || "schedule";
+  let scheduled_at = null;
+  if (mode === "schedule") {
+    const local = fd.get("_scheduled_at_local");
+    if (local) {
+      // datetime-local has no TZ → interpret as local browser time, convert to UTC ISO
+      scheduled_at = new Date(local).toISOString();
+    }
+  }
   const payload = {
     title: fd.get('title'),
     category: fd.get('category'),
     delivery_channel: fd.get('delivery_channel'),
     message_text: fd.get('message_text') || null,
     content_id: fd.get('content_id') || null,
-    group_ids, user_ids,
+    group_ids: fd.getAll('group_ids').map(Number),
+    user_ids: fd.getAll('user_ids').map(Number),
     generate_links: !!fd.get('generate_links'),
+    mode, scheduled_at,
   };
   const err = document.getElementById('compose-error');
   err.hidden = true;
@@ -132,5 +145,12 @@ async function submitCompose(ev) {
     err.hidden = false;
   }
 }
+</script>
+
+<script type="module">
+import { initSchedulePicker } from "/static/js/schedule.js";
+
+const block = document.querySelector(".when-block");
+if (block) initSchedulePicker(block, {});
 </script>
 {% endblock %}

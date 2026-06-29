@@ -376,3 +376,13 @@ async def test_broadcasts_require_auth(client):
     assert r.status_code == 401
     r = await client.post("/api/broadcasts", json={"title": "X", "user_ids": [1]})
     assert r.status_code == 401
+
+
+async def test_compose_form_renders_picker_block(client):
+    await _login(client)
+    r = await client.get("/admin/broadcasts/new")
+    assert r.status_code == 200
+    html = r.text
+    assert 'name="_schedule_mode"' in html
+    assert 'name="_scheduled_at_local"' in html
+    assert 'class="when-block"' in html
