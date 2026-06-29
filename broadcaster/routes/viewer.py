@@ -74,8 +74,14 @@ def viewer_page(request: Request, token: str):
     referrer = request.headers.get("referer")
     views_svc.record_view(link["id"], ip=ip, ua=ua, referrer=referrer)
 
-    # Fetch media metadata if a content_id is attached
+    # Fetch media metadata if a content_id is attached. Even if a row
+    # exists in `content`, the underlying file may be missing (volume
+    # reset, manual cleanup, etc.) — detect that here so the template
+    # doesn't render a broken video player and the user gets a clear
+    # "media unavailable" notice instead of the browser's cryptic
+    # "No video with supported format and MIME type found".
     media = None
+    media_unavailable = False
     if link.get("content_id"):
         with get_db() as conn:
             row = conn.execute(
@@ -83,7 +89,11 @@ def viewer_page(request: Request, token: str):
                 (link["content_id"],),
             ).fetchone()
         if row:
-            media = dict(row)
+            file_path = Path(row["content_data"])
+            if file_path.exists():
+                media = dict(row)
+            else:
+                media_unavailable = True
 
     # Comments list (read-only for v1; Phase 5 wires the form)
     with get_db() as conn:
@@ -99,6 +109,7 @@ def viewer_page(request: Request, token: str):
         {
             "link": link,
             "media": media,
+            "media_unavailable": media_unavailable,
             "comments": comments,
             "comment_count": len(comments),
             "base_public_url": get_settings().base_public_url,

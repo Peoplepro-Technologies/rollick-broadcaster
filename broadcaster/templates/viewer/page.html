@@ -34,6 +34,14 @@
         <p><a class="btn" href="/v/{{ link.token }}/media" target="_blank" rel="noopener">📎 Open attached file: {{ media.file_name }}</a></p>
       {% endif %}
     </section>
+    {% elif media_unavailable %}
+    <section class="media-block card media-missing">
+      <p class="muted" style="text-align:center; padding:24px 8px;">
+        📁 <b>Media unavailable.</b><br>
+        The file attached to this broadcast can't be found on the server.
+        Please contact the sender to re-upload.
+      </p>
+    </section>
     {% endif %}
 
     {% if link.message_text %}

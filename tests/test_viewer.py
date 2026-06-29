@@ -200,3 +200,35 @@ async def test_viewer_requires_no_auth(authed_client, client):
     # No login first for the viewer GET
     r = await client.get(f"/v/{token}")
     assert r.status_code == 200
+
+
+# ── Graceful handling when the underlying file is gone ─────
+
+async def test_viewer_skips_video_when_file_missing(authed_client, client, tmp_path, monkeypatch):
+    """If the content row exists in DB but the underlying file vanished
+    (volume reset, manual cleanup, etc.), the viewer must NOT render a
+    broken <video> element. Instead it should show a 'Media unavailable'
+    notice and the /media endpoint should return 404."""
+    monkeypatch.chdir(tmp_path)
+    files = {"file": ("gone.mp4", io.BytesIO(b"video-bytes"), "video/mp4")}
+    cr = await authed_client.post("/api/content/media", files=files)
+    cid = cr.json()["id"]
+    token, _, _ = await _make_user_and_broadcast(authed_client, content_id=cid)
+
+    # Remove the file but leave the content row intact.
+    from broadcaster.db import get_db
+    with get_db() as conn:
+        path_row = conn.execute("SELECT content_data FROM content WHERE id = ?", (cid,)).fetchone()
+    import os
+    os.remove(path_row["content_data"])
+
+    # Viewer page must NOT include <video> tag, MUST include the notice.
+    r = await client.get(f"/v/{token}")
+    assert r.status_code == 200
+    assert "<video" not in r.text
+    assert "Media unavailable" in r.text
+    assert "media-missing" in r.text
+
+    # /media endpoint still returns 404 (unchanged).
+    r2 = await client.get(f"/v/{token}/media")
+    assert r2.status_code == 404
