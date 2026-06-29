@@ -46,7 +46,7 @@ async def test_viewer_page_returns_html(authed_client, client):
 async def test_viewer_page_renders_video_when_media(authed_client, client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     files = {"file": ("clip.mp4", io.BytesIO(b"fake-video-bytes"), "video/mp4")}
-    cr = await authed_client.post("/api/content/media", files=files)
+    cr = await authed_client.post("/api/content/media", files=files, data={"caption": "greet"})
     cid = cr.json()["id"]
     token, _, _ = await _make_user_and_broadcast(authed_client, content_id=cid)
     r = await client.get(f"/v/{token}")
@@ -58,7 +58,7 @@ async def test_viewer_page_renders_video_when_media(authed_client, client, tmp_p
 async def test_viewer_page_renders_image_when_media(authed_client, client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     files = {"file": ("pic.png", io.BytesIO(b"\x89PNG_FAKE"), "image/png")}
-    cr = await authed_client.post("/api/content/media", files=files)
+    cr = await authed_client.post("/api/content/media", files=files, data={"caption": "greet"})
     cid = cr.json()["id"]
     token, _, _ = await _make_user_and_broadcast(authed_client, content_id=cid)
     r = await client.get(f"/v/{token}")
@@ -167,7 +167,7 @@ async def test_post_view_unknown_token_returns_410(client):
 async def test_media_endpoint_streams_content(authed_client, client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     files = {"file": ("x.bin", io.BytesIO(b"media-bytes"), "application/octet-stream")}
-    cr = await authed_client.post("/api/content/media", files=files)
+    cr = await authed_client.post("/api/content/media", files=files, data={"caption": "greet"})
     cid = cr.json()["id"]
     token, _, _ = await _make_user_and_broadcast(authed_client, content_id=cid)
     r = await client.get(f"/v/{token}/media")
@@ -211,7 +211,7 @@ async def test_viewer_skips_video_when_file_missing(authed_client, client, tmp_p
     notice and the /media endpoint should return 404."""
     monkeypatch.chdir(tmp_path)
     files = {"file": ("gone.mp4", io.BytesIO(b"video-bytes"), "video/mp4")}
-    cr = await authed_client.post("/api/content/media", files=files)
+    cr = await authed_client.post("/api/content/media", files=files, data={"caption": "greet"})
     cid = cr.json()["id"]
     token, _, _ = await _make_user_and_broadcast(authed_client, content_id=cid)
 

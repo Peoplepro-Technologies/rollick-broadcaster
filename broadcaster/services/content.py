@@ -94,7 +94,16 @@ def create_text(caption: Optional[str], body: str) -> dict:
 # ── Media ─────────────────────────────────────────────────────
 
 def create_media(file: UploadFile, caption: Optional[str]) -> dict:
-    """Persist a media file. Returns the content row."""
+    """Persist a media file. Returns the content row.
+
+    Captions are required so every media item is labelled — otherwise
+    the admin table and the broadcast composer can't tell two uploads
+    apart at a glance, and the recipient's preview pane shows a blank
+    label."""
+    caption_clean = (caption or "").strip()
+    if not caption_clean:
+        raise HTTPException(status_code=400, detail="caption_required")
+
     root = _upload_root()
     root.mkdir(parents=True, exist_ok=True)
 
@@ -120,7 +129,7 @@ def create_media(file: UploadFile, caption: Optional[str]) -> dict:
         cur = conn.execute(
             "INSERT INTO content (content_type, caption, content_data, file_name, file_size, mime_type, created_at) "
             "VALUES ('media', ?, ?, ?, ?, ?, ?)",
-            (caption or None, abs_path, original, len(contents), mime, _now()),
+            (caption_clean, abs_path, original, len(contents), mime, _now()),
         )
     return get_content(cur.lastrowid)  # type: ignore[return-value]
 

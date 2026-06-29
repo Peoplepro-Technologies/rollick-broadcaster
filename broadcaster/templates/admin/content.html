@@ -52,18 +52,31 @@
     <div id="upload-result" class="form-error" hidden style="margin: 12px 0;"></div>
     <div class="table-wrap">
       <table class="table">
-        <thead><tr><th>Caption</th><th>File</th><th>Size</th><th>Type</th><th></th></tr></thead>
+        <thead><tr><th>Caption</th><th>Preview</th><th>File</th><th>Size</th><th>Type</th><th></th></tr></thead>
         <tbody>
           {% for m in media %}
           <tr>
             <td>{{ m.caption or '' }}</td>
+            <td>
+              {% if m.mime_type and m.mime_type.startswith('image/') %}
+                <a href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener">
+                  <img class="thumb" src="/api/content/file/{{ m.id }}" alt="{{ m.caption }}" loading="lazy">
+                </a>
+              {% elif m.mime_type and m.mime_type.startswith('video/') %}
+                <a class="thumb thumb-icon" href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener" title="Open video">▶</a>
+              {% elif m.mime_type and m.mime_type.startswith('audio/') %}
+                <a class="thumb thumb-icon" href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener" title="Open audio">♪</a>
+              {% else %}
+                <a class="thumb thumb-icon" href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener" title="Open file">📎</a>
+              {% endif %}
+            </td>
             <td><a href="/api/content/file/{{ m.id }}">{{ m.file_name }}</a></td>
             <td>{{ m.file_size }} B</td>
             <td><span class="pill muted">{{ m.mime_type }}</span></td>
             <td><button class="btn small danger" onclick="deleteContent({{ m.id }})">Delete</button></td>
           </tr>
           {% else %}
-          <tr><td colspan="5" class="empty">No media uploaded yet.</td></tr>
+          <tr><td colspan="6" class="empty">No media uploaded yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -82,6 +95,24 @@
       <div class="modal-actions">
         <button type="button" class="btn secondary" onclick="closeAddText()">Cancel</button>
         <button type="submit" class="btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Upload Media modal: prompts for caption (required) -->
+<div id="upload-media-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeUploadMedia()">
+  <div class="modal-card">
+    <h3>Upload Media</h3>
+    <form id="upload-media-form" onsubmit="submitUploadMedia(event)">
+      <label>Caption *
+        <input id="media-caption-input" name="caption" required maxlength="120" placeholder="e.g. Welcome video, Product photo">
+      </label>
+      <p class="muted" style="font-size:12px;margin-top:4px;">A short label so admins and recipients can identify this media later.</p>
+      <div id="media-caption-error" class="form-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeUploadMedia()">Cancel</button>
+        <button type="submit" class="btn">Upload</button>
       </div>
     </form>
   </div>
@@ -121,19 +152,53 @@ async function deleteContent(id) {
 document.getElementById('media-input').addEventListener('change', async (ev) => {
   const file = ev.target.files[0];
   if (!file) return;
-  const fd = new FormData();
-  fd.append('file', file);
-  const result = document.getElementById('upload-result');
-  result.hidden = true;
-  const r = await fetch('/api/content/media', { method: 'POST', body: fd });
-  if (r.ok) {
-    setTimeout(() => location.reload(), 400);
-  } else {
-    const b = await r.json().catch(()=>({}));
-    result.textContent = 'Upload failed: ' + (b.detail || r.status);
-    result.hidden = false;
-  }
+  // Stash the file and open the caption modal so the user must label it.
+  pendingFile = file;
+  document.getElementById('media-caption-input').value = file.name;
+  document.getElementById('upload-result').hidden = true;
+  openUploadMedia();
   ev.target.value = '';
 });
+
+let pendingFile = null;
+
+function openUploadMedia() {
+  document.getElementById('upload-media-modal').hidden = false;
+  document.getElementById('media-caption-error').hidden = true;
+  setTimeout(() => document.getElementById('media-caption-input').focus(), 0);
+}
+function closeUploadMedia() {
+  document.getElementById('upload-media-modal').hidden = true;
+  pendingFile = null;
+}
+
+async function submitUploadMedia(ev) {
+  ev.preventDefault();
+  if (!pendingFile) { closeUploadMedia(); return; }
+  const caption = document.getElementById('media-caption-input').value.trim();
+  const errEl = document.getElementById('media-caption-error');
+  errEl.hidden = true;
+  if (!caption) {
+    errEl.textContent = 'Caption is required so the media can be identified later.';
+    errEl.hidden = false;
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', pendingFile);
+  fd.append('caption', caption);
+  const r = await fetch('/api/content/media', { method: 'POST', body: fd });
+  if (r.ok) {
+    closeUploadMedia();
+    setTimeout(() => location.reload(), 200);
+  } else {
+    const b = await r.json().catch(()=>({}));
+    const map = {
+      caption_required: 'Caption is required so the media can be identified later.',
+      empty_file: 'The file appears to be empty.',
+    };
+    errEl.textContent = map[b.detail] || ('Upload failed: ' + (b.detail || r.status));
+    errEl.hidden = false;
+  }
+}
 </script>
 {% endblock %}

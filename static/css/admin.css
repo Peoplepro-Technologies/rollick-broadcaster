@@ -452,3 +452,34 @@
 .custom-row    { display: flex; flex-direction: column; gap: 4px; padding: 4px 28px; }
 .field-warning { padding: 4px 28px; color: #b45309; font-size: 13px; }
 .tz-hint       { color: var(--muted, #64748b); font-size: 12px; }
+
+/* ── Content library: media thumbnails ──────────────────── */
+.thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  background: var(--bg-soft, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  overflow: hidden;
+  vertical-align: middle;
+  text-decoration: none;
+  color: var(--muted, #64748b);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.thumb:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.thumb-icon {
+  font-size: 22px;
+  line-height: 1;
+}

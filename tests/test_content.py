@@ -71,7 +71,9 @@ async def test_upload_media_persists_file(authed_client, tmp_path, monkeypatch):
 async def test_upload_media_rejects_empty(authed_client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     files = {"file": ("empty.txt", io.BytesIO(b""), "text/plain")}
-    r = await authed_client.post("/api/content/media", files=files)
+    r = await authed_client.post(
+        "/api/content/media", files=files, data={"caption": "greet"},
+    )
     assert r.status_code == 400
     assert r.json()["detail"] == "empty_file"
 
@@ -80,11 +82,47 @@ async def test_upload_media_rewrites_filename_for_safety(authed_client, tmp_path
     monkeypatch.chdir(tmp_path)
     # Filename with path traversal — should be sanitized to just basename
     files = {"file": ("../../etc/passwd.txt", io.BytesIO(b"x"), "text/plain")}
-    r = await authed_client.post("/api/content/media", files=files)
+    r = await authed_client.post(
+        "/api/content/media", files=files, data={"caption": "greet"},
+    )
     assert r.status_code == 200
     body = r.json()
     assert ".." not in body["content_data"]
     assert "/" in body["content_data"]  # uploads/...
+
+
+async def test_upload_media_requires_caption(authed_client, tmp_path, monkeypatch):
+    """Caption is required so every media item is labelled in the admin
+    table and the broadcast composer. Missing/blank/whitespace caption
+    must be rejected with 400 caption_required."""
+    monkeypatch.chdir(tmp_path)
+    files = {"file": ("hello.txt", io.BytesIO(b"hi"), "text/plain")}
+
+    # No caption field at all
+    r = await authed_client.post("/api/content/media", files=files)
+    assert r.status_code == 400
+    assert r.json()["detail"] == "caption_required"
+
+    # Empty caption
+    r = await authed_client.post(
+        "/api/content/media", files=files, data={"caption": ""},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"] == "caption_required"
+
+    # Whitespace-only caption
+    r = await authed_client.post(
+        "/api/content/media", files=files, data={"caption": "   "},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"] == "caption_required"
+
+    # Valid caption — sanity check the happy path
+    r = await authed_client.post(
+        "/api/content/media", files=files, data={"caption": "Greeting"},
+    )
+    assert r.status_code == 200
+    assert r.json()["caption"] == "Greeting"
 
 
 # ── Delete ────────────────────────────────────────────────────
@@ -101,7 +139,9 @@ async def test_delete_text(authed_client):
 async def test_delete_media_removes_file(authed_client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     files = {"file": ("a.txt", io.BytesIO(b"data"), "text/plain")}
-    cr = await authed_client.post("/api/content/media", files=files)
+    cr = await authed_client.post(
+        "/api/content/media", files=files, data={"caption": "greet"},
+    )
     body = cr.json()
     from pathlib import Path
     rel_path = Path(body["content_data"])
@@ -117,7 +157,9 @@ async def test_delete_media_removes_file(authed_client, tmp_path, monkeypatch):
 async def test_serve_media_returns_file(authed_client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     files = {"file": ("x.bin", io.BytesIO(b"binary-content"), "application/octet-stream")}
-    cr = await authed_client.post("/api/content/media", files=files)
+    cr = await authed_client.post(
+        "/api/content/media", files=files, data={"caption": "greet"},
+    )
     cid = cr.json()["id"]
     r = await authed_client.get(f"/api/content/file/{cid}")
     assert r.status_code == 200
@@ -194,3 +236,50 @@ async def test_serve_media_404_for_text(authed_client):
 async def test_content_requires_auth(client):
     r = await client.get("/api/content")
     assert r.status_code == 401
+
+
+# ── Admin /admin/content page (preview thumbnails) ─────────
+
+async def test_admin_content_page_renders_preview_thumbnails(
+    authed_client, tmp_path, monkeypatch
+):
+    """The media table must show a Preview column with the right icon
+    for each MIME type: <img> for images, ▶ for video, 📎 fallback."""
+    monkeypatch.chdir(tmp_path)
+
+    # One image
+    await authed_client.post(
+        "/api/content/media",
+        files={"file": ("pic.png", io.BytesIO(b"\x89PNG_FAKE"), "image/png")},
+        data={"caption": "Greeting"},
+    )
+    # One video
+    await authed_client.post(
+        "/api/content/media",
+        files={"file": ("clip.mp4", io.BytesIO(b"video"), "video/mp4")},
+        data={"caption": "Promo"},
+    )
+    # One other (PDF)
+    await authed_client.post(
+        "/api/content/media",
+        files={"file": ("doc.pdf", io.BytesIO(b"%PDF-1"), "application/pdf")},
+        data={"caption": "Brochure"},
+    )
+
+    r = await authed_client.get("/admin/content")
+    assert r.status_code == 200
+    html = r.text
+
+    # Column header is present
+    assert "<th>Preview</th>" in html
+
+    # Image → real <img class="thumb">
+    assert '<img class="thumb"' in html
+    assert "pic.png" in html
+
+    # Video → play-icon
+    assert "thumb-icon" in html
+    assert "▶" in html
+
+    # Other → doc icon
+    assert "📎" in html
