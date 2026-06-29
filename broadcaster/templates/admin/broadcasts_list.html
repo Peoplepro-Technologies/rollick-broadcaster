@@ -6,6 +6,9 @@
 {% include "admin/_nav.html" %}
 
 <main class="main">
+  {% if flash %}
+  <div class="flash flash-info" role="status" data-flash>{{ flash }}</div>
+  {% endif %}
   <div class="page-head">
     <div>
       <h1>Broadcasts</h1>

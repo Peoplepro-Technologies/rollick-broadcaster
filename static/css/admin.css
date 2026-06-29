@@ -552,3 +552,28 @@ audio.preview-media { background: transparent; }
   padding-top: 12px;
   border-top: 1px solid var(--border, #e2e8f0);
 }
+
+/* ── Breadcrumb + flash messages ────────────────────────── */
+.breadcrumb {
+  font-size: 13px;
+  margin: 0 0 12px 0;
+}
+.breadcrumb a {
+  color: var(--muted, #64748b);
+  text-decoration: none;
+}
+.breadcrumb a:hover {
+  color: var(--primary, #ED0E6D);
+}
+.flash {
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  border: 1px solid transparent;
+}
+.flash-info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}

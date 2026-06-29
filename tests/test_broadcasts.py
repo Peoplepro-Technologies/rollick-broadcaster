@@ -399,3 +399,44 @@ async def test_list_emits_data_scheduled_at_marker(client):
     r = await client.get("/admin/broadcasts")
     assert r.status_code == 200
     assert 'data-scheduled-at="' in r.text
+
+
+async def test_detail_page_redirects_to_list_when_missing(client):
+    """Visiting /admin/broadcasts/{id} for a deleted/missing broadcast
+    must NOT show raw 'Broadcast not found' — it should bounce to the
+    list page with a flash so the user understands what happened."""
+    await _login(client)
+    r = await client.get("/admin/broadcasts/999999", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/admin/broadcasts?missing=999999"
+
+    # Following the redirect renders the list with the flash visible.
+    r2 = await client.get("/admin/broadcasts?missing=999999")
+    assert r2.status_code == 200
+    assert "Broadcast #999999 no longer exists" in r2.text
+    assert 'class="flash flash-info"' in r2.text
+
+
+async def test_detail_page_has_back_link_to_list(client):
+    """The detail page must expose a clear breadcrumb back to the list
+    so users don't get stranded after scheduling / sending."""
+    await _login(client)
+    a, = await _make_users(client, ("A", "1000000096", "", ""))
+    bid = (await client.post("/api/broadcasts", json={
+        "title": "Back-link", "user_ids": [a],
+    })).json()["id"]
+    r = await client.get(f"/admin/broadcasts/{bid}")
+    assert r.status_code == 200
+    assert 'class="breadcrumb"' in r.text
+    assert 'href="/admin/broadcasts"' in r.text
+    assert "All Broadcasts" in r.text
+
+
+async def test_list_no_flash_for_normal_visit(client):
+    """The list page must NOT show the 'no longer exists' flash when
+    there's no missing query param — that would be confusing on every
+    normal navigation."""
+    await _login(client)
+    r = await client.get("/admin/broadcasts")
+    assert r.status_code == 200
+    assert 'class="flash flash-info"' not in r.text

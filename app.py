@@ -193,11 +193,18 @@ def admin_broadcasts_page(request: Request):
     if admin_auth.current_admin_id(request) is None:
         return RedirectResponse("/admin/login", status_code=303)
     from broadcaster.services import broadcasts as bc_svc
+    # If the user was bounced here from a deleted/missing broadcast,
+    # show a one-shot message so they know what happened.
+    missing_id = request.query_params.get("missing")
+    flash = None
+    if missing_id:
+        flash = f"Broadcast #{missing_id} no longer exists (it may have been deleted)."
     return templates.TemplateResponse(
         request, "admin/broadcasts_list.html",
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
          "admin": {"username": "admin"},
-         "broadcasts": bc_svc.list_broadcasts()},
+         "broadcasts": bc_svc.list_broadcasts(),
+         "flash": flash},
     )
 
 
@@ -226,7 +233,11 @@ def admin_broadcast_detail_page(request: Request, bid: int):
     from broadcaster.services import analytics as analytics_svc
     b = bc_svc.get_broadcast(bid)
     if not b:
-        return HTMLResponse("Broadcast not found", status_code=404)
+        # Broadcast was deleted (or never existed / link went stale).
+        # Don't dump the user on a raw 404 page — bounce them to the
+        # list with a one-shot flash that explains what happened.
+        resp = RedirectResponse("/admin/broadcasts?missing=" + str(bid), status_code=303)
+        return resp
     return templates.TemplateResponse(
         request, "admin/broadcast_detail.html",
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",

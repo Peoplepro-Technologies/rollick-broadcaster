@@ -6,6 +6,9 @@
 {% include "admin/_nav.html" %}
 
 <main class="main">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="/admin/broadcasts">← All Broadcasts</a>
+  </nav>
   <div class="page-head">
     <div>
       <h1>{{ broadcast.title }}</h1>
@@ -157,8 +160,13 @@ actions.addEventListener("click", async (ev) => {
   if (!url) return;
   const method = act === "delete" ? "DELETE" : "POST";
   const r = await fetch(url, { method });
-  if (r.ok) location.reload();
-  else {
+  if (r.ok) {
+    // After delete the broadcast row is gone, so reloading this URL
+    // would 404. Bounce to the list page instead. Other actions stay
+    // on this page so the user can confirm the new state.
+    if (act === "delete") location.href = "/admin/broadcasts";
+    else location.reload();
+  } else {
     const b = await r.json().catch(() => ({}));
     alert(`Action failed: ${b.detail || r.status}`);
   }
