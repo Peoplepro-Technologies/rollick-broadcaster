@@ -240,25 +240,12 @@ def admin_settings_page(request: Request):
     if admin_auth.current_admin_id(request) is None:
         return RedirectResponse("/admin/login", status_code=303)
     from broadcaster.services import settings as settings_svc
-    s = get_settings()
     return templates.TemplateResponse(
         request, "admin/settings.html",
-        {"app_name": s.app_name, "active_nav": "settings",
+        {"app_name": get_settings().app_name, "active_nav": "settings",
          "admin": {"username": "admin"},
          "settings": settings_svc.all_visible(),
-         "runtime": {
-             "smtp_host": s.smtp_host,
-             "smtp_port": s.smtp_port,
-             "smtp_user": s.smtp_user,
-             "smtp_from": s.smtp_from,
-             "smtp_pass": s.smtp_pass,
-             "whatsapp_phone_id": s.whatsapp_phone_id,
-             "whatsapp_api_version": s.whatsapp_api_version,
-             "whatsapp_country_code": s.whatsapp_country_code,
-             "whatsapp_access_token": s.whatsapp_access_token,
-             "whatsapp_app_secret": s.whatsapp_app_secret,
-         },
-         "base_public_url": s.base_public_url},
+         "base_public_url": get_settings().base_public_url},
     )
 
 
