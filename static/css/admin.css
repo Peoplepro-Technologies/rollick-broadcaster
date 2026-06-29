@@ -347,13 +347,15 @@
 .page-head .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 /* ── Dashboard ────────────────────────────────────────────── */
-.kpi-grid {
+/* Note: classes prefixed `dash-` to avoid collision with the analytics
+   block's `.kpi-grid` / `.kpi` / `.label` / `.num` (line 317-343). */
+.dash-kpi-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
-.kpi-tile {
+.dash-kpi-tile {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -365,31 +367,31 @@
   color: inherit;
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
-.kpi-tile:hover {
+.dash-kpi-tile:hover {
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
-.kpi-label {
+.dash-kpi-label {
   font-size: 12px;
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.kpi-value {
+.dash-kpi-value {
   font-size: 32px;
   font-weight: 700;
   color: var(--text);
   line-height: 1.1;
 }
-.kpi-sub {
+.dash-kpi-sub {
   font-size: 12px;
   color: var(--muted);
 }
-.kpi-warn {
+.dash-kpi-warn {
   background: var(--danger-soft);
   border-color: var(--danger);
 }
-.kpi-warn .kpi-value {
+.dash-kpi-warn .dash-kpi-value {
   color: var(--danger);
 }
 
@@ -421,9 +423,9 @@
 }
 
 @media (max-width: 1100px) {
-  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .dash-kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .dash-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .dash-kpi-grid { grid-template-columns: repeat(2, 1fr); }
 }

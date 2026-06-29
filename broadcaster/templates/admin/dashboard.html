@@ -14,37 +14,37 @@
   </div>
 
   {# ── KPI tiles ──────────────────────────────────────────── #}
-  <div class="kpi-grid">
+  <div class="dash-kpi-grid">
     {% set k = overview.kpis %}
-    <a class="kpi-tile" href="/admin/users">
-      <span class="kpi-label">Users</span>
-      <span class="kpi-value">{{ "{:,}".format(k.users_total) }}</span>
-      <span class="kpi-sub">{{ k.users_new_week }} new this week</span>
+    <a class="dash-kpi-tile" href="/admin/users">
+      <span class="dash-kpi-label">Users</span>
+      <span class="dash-kpi-value">{{ "{:,}".format(k.users_total) }}</span>
+      <span class="dash-kpi-sub">{{ k.users_new_week }} new this week</span>
     </a>
-    <a class="kpi-tile" href="/admin/users">
-      <span class="kpi-label">Active users</span>
-      <span class="kpi-value">{{ "{:,}".format(k.users_active) }}</span>
-      <span class="kpi-sub">{{ k.users_total - k.users_active }} inactive</span>
+    <a class="dash-kpi-tile" href="/admin/users">
+      <span class="dash-kpi-label">Active users</span>
+      <span class="dash-kpi-value">{{ "{:,}".format(k.users_active) }}</span>
+      <span class="dash-kpi-sub">{{ k.users_total - k.users_active }} inactive</span>
     </a>
-    <a class="kpi-tile" href="/admin/broadcasts">
-      <span class="kpi-label">Broadcasts</span>
-      <span class="kpi-value">{{ "{:,}".format(k.broadcasts_total) }}</span>
-      <span class="kpi-sub">all-time</span>
+    <a class="dash-kpi-tile" href="/admin/broadcasts">
+      <span class="dash-kpi-label">Broadcasts</span>
+      <span class="dash-kpi-value">{{ "{:,}".format(k.broadcasts_total) }}</span>
+      <span class="dash-kpi-sub">all-time</span>
     </a>
-    <a class="kpi-tile" href="/admin/broadcasts">
-      <span class="kpi-label">Views (7d)</span>
-      <span class="kpi-value">{{ "{:,}".format(k.views_week) }}</span>
-      <span class="kpi-sub">across all broadcasts</span>
+    <a class="dash-kpi-tile" href="/admin/broadcasts">
+      <span class="dash-kpi-label">Views (7d)</span>
+      <span class="dash-kpi-value">{{ "{:,}".format(k.views_week) }}</span>
+      <span class="dash-kpi-sub">across all broadcasts</span>
     </a>
-    <a class="kpi-tile" href="/admin/comments">
-      <span class="kpi-label">Comments (7d)</span>
-      <span class="kpi-value">{{ "{:,}".format(k.comments_week) }}</span>
-      <span class="kpi-sub">visible</span>
+    <a class="dash-kpi-tile" href="/admin/comments">
+      <span class="dash-kpi-label">Comments (7d)</span>
+      <span class="dash-kpi-value">{{ "{:,}".format(k.comments_week) }}</span>
+      <span class="dash-kpi-sub">visible</span>
     </a>
-    <a class="kpi-tile {% if k.pending_mod %}kpi-warn{% endif %}" href="/admin/comments">
-      <span class="kpi-label">To moderate</span>
-      <span class="kpi-value">{{ "{:,}".format(k.pending_mod) }}</span>
-      <span class="kpi-sub">{% if k.pending_mod %}oldest first{% else %}all clear{% endif %}</span>
+    <a class="dash-kpi-tile {% if k.pending_mod %}dash-kpi-warn{% endif %}" href="/admin/comments">
+      <span class="dash-kpi-label">To moderate</span>
+      <span class="dash-kpi-value">{{ "{:,}".format(k.pending_mod) }}</span>
+      <span class="dash-kpi-sub">{% if k.pending_mod %}oldest first{% else %}all clear{% endif %}</span>
     </a>
   </div>
 
