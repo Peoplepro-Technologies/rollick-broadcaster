@@ -80,7 +80,14 @@ export function initSchedulePicker(rootEl, opts = {}) {
 
   const chipRow   = rootEl.querySelector(".chip-row");
   const customIn  = rootEl.querySelector('input[type="datetime-local"]');
-  const submitBtn = rootEl.querySelector("[data-submit-button]");
+  // submit-button may live OUTSIDE the picker block (e.g. .form-actions on the
+  // compose form). Accept an explicit selector via opts, then look inside rootEl,
+  // then fall back to a single document-wide match (one picker per page is
+  // assumed).
+  const submitBtn =
+    (opts.submitSelector && document.querySelector(opts.submitSelector)) ||
+    rootEl.querySelector("[data-submit-button]") ||
+    document.querySelector("[data-submit-button]");
   const warningEl = rootEl.querySelector("[data-warning]");
   const tzHint    = rootEl.querySelector("[data-tz-hint]");
 
