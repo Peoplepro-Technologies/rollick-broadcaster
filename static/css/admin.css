@@ -404,6 +404,12 @@
 .dash-card-wide {
   /* same as .card; class is here so the markup intent is explicit */
 }
+/* Chart.js requires a sized, relatively-positioned container to avoid an
+   infinite-resize loop when `maintainAspectRatio: false` is set. */
+.chart-wrap {
+  position: relative;
+  height: 280px;
+}
 .pending-list {
   list-style: none;
   padding: 0;
