@@ -1,0 +1,35 @@
+{% macro schedule_picker(mode='schedule', initial='') %}
+{# Render a "When to send?" picker block.
+   mode: 'schedule' (default) | 'send_now' | 'draft'.
+   initial: optional ISO UTC datetime to pre-fill the datetime-local input.
+#}
+<fieldset class="when-block">
+  <legend>When to send?</legend>
+
+  <label class="radio-card">
+    <input type="radio" name="_schedule_mode" value="send_now" {% if mode == 'send_now' %}checked{% endif %}>
+    <span>🚀 Send immediately</span>
+  </label>
+
+  <label class="radio-card">
+    <input type="radio" name="_schedule_mode" value="schedule"
+           {% if mode == 'schedule' or mode not in ['send_now','draft'] %}checked{% endif %}>
+    <span>⏰ Schedule for later</span>
+  </label>
+  <div class="chip-row" data-chip-row></div>
+  <div class="custom-row">
+    <label>Or pick custom:
+      <input type="datetime-local" name="_scheduled_at_local" value="{{ initial }}">
+    </label>
+    <small data-tz-hint class="tz-hint"></small>
+  </div>
+  <div data-warning class="field-warning" hidden></div>
+  <input type="hidden" name="_scheduled_at" value="">
+  <input type="hidden" name="mode" value="">
+
+  <label class="radio-card">
+    <input type="radio" name="_schedule_mode" value="draft" {% if mode == 'draft' %}checked{% endif %}>
+    <span>📝 Save as draft</span>
+  </label>
+</fieldset>
+{% endmacro %}
