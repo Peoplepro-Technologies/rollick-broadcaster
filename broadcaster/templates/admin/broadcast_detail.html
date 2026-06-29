@@ -23,7 +23,7 @@
          {% if broadcast.scheduled_at %}data-broadcast-scheduled-at="{{ broadcast.scheduled_at }}"{% endif %}></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="links">
     <div class="card-head"><h2>Per-Subscriber Links</h2></div>
     <div class="table-wrap">
       <table class="table">
@@ -72,7 +72,7 @@
     <div class="card">
       <div class="card-head"><h2>When to send</h2></div>
       {% if broadcast.status == 'queued' %}
-        <p class="muted">Currently scheduled for <b>{{ broadcast.scheduled_at }}</b>. Pick a new time below and click Reschedule.</p>
+        <p class="muted">Currently scheduled for <b><span data-scheduled-at="{{ broadcast.scheduled_at }}">.</span></b>. Pick a new time below and click Reschedule.</p>
       {% endif %}
       {{ sp.schedule_picker('schedule', broadcast.scheduled_at or '') }}
       <div class="form-actions">
@@ -114,7 +114,7 @@
 
 {% block scripts %}
 <script type="module">
-import { initSchedulePicker } from "/static/js/schedule.js";
+import { initSchedulePicker, applyListFormatter } from "/static/js/schedule.js";
 
 const actions = document.querySelector("[data-actions]");
 const bid            = parseInt(actions.dataset.broadcastId, 10);
@@ -135,6 +135,11 @@ if (status === "draft") {
 } else if (status === "sent") {
   actions.innerHTML = `
     <a class="btn small secondary" href="#links">View Links</a>
+    <button class="btn danger small" data-act="delete">Delete</button>
+  `;
+} else {
+  // cancelled / failed / sending / partial — terminal/edge states
+  actions.innerHTML = `
     <button class="btn danger small" data-act="delete">Delete</button>
   `;
 }
@@ -177,7 +182,11 @@ if (pickerBlock) {
       return;
     }
     if (mode === "draft") {
-      alert("To move to draft, click Cancel then reopen.");
+      alert(
+        "Moving to draft requires recreating this broadcast.\n\n" +
+        "Cancelling transitions this broadcast to 'cancelled' (a terminal state). " +
+        "To return it to draft, delete it and create a new one."
+      );
       return;
     }
     const r = await fetch(`/api/broadcasts/${bid}/schedule`, {
@@ -192,6 +201,8 @@ if (pickerBlock) {
     }
   });
 }
+
+applyListFormatter(document);
 
 // Keep revokeLink global so any inline onclick="revokeLink(...)" continues to work.
 async function revokeLink(bid, lid) {
