@@ -40,6 +40,26 @@ A second pain point: the spreadsheet is the **source of truth** for the user's r
 
 ## Design
 
+### 0. Composition rule (read this first)
+
+**Skip-report visibility is non-negotiable and orthogonal to replace mode.** Both features must compose:
+
+| Mode                | What the skip-report tells you                                                                  |
+|---------------------|------------------------------------------------------------------------------------------------|
+| Replace ON or OFF   | Same. The `errors[]` array is built per file row regardless of mode.                            |
+| Replace ON, bad row | "Row 7: invalid_phone '12345' — was skipped, NOT inserted, NOT deleted anyone else."           |
+| Replace OFF, bad row| "Row 7: invalid_phone '12345' — was skipped, file's existing data untouched."                  |
+
+The replace checkbox only changes what happens to **DB rows**, never to the **skip-report**. After every upload, the banner always shows `+/~Y/!Z` when `skipped > 0`, and the disclosure (toggle + inline table + .xlsx download) appears below the banner. If the user picks replace mode and the file contains bad rows, those bad rows are:
+
+- Visible in the skip table (with the reason + offending value).
+- Available as a downloadable .xlsx.
+- Insertable on a future re-upload after the user fixes them in their spreadsheet.
+
+Implementation must NOT couple replace-mode logic with skip-report logic. They're two independent concerns that happen to share the same upload endpoint and response.
+
+
+
 ### 1. Replace mode semantics
 
 **Default** (toggle off): current behavior — additive upsert. Rows not in the file are untouched.
