@@ -18,7 +18,8 @@
       <h2>All Users</h2>
       <div class="actions">
         <button class="btn success small" onclick="openAddUser()">+ Add User</button>
-        <a href="/api/users/download" class="btn secondary small">⤓ Excel</a>
+        <a href="/api/users/template" class="btn secondary small" title="Download blank xlsx with the right columns">⤓ Template</a>
+        <a href="/api/users/download" class="btn secondary small" title="Export current users as xlsx">⤓ Excel</a>
         <label class="btn secondary small" style="cursor:pointer;">
           ↑ Upload
           <input type="file" accept=".xlsx" id="xlsx-input" hidden>
@@ -26,10 +27,31 @@
       </div>
     </div>
 
+    <details class="format-help">
+      <summary>📋 Excel format guide</summary>
+      <div class="format-help-body">
+        <p><b>Columns (header row required):</b></p>
+        <code>name | phone | email | department | location | is_active</code>
+        <p><b>Phone formats accepted</b> (auto-normalised to 10 digits):</p>
+        <ul>
+          <li><code>9876543210</code> ← raw 10 digits</li>
+          <li><code>+91 98765 43210</code> ← with country code + spaces</li>
+          <li><code>+91-9876543210</code> ← with country code + dashes</li>
+          <li><code>098765 43210</code> ← with leading 0</li>
+          <li><code>(987) 654-3210</code> ← with parens</li>
+        </ul>
+        <p><b>is_active</b>: <code>active</code>, <code>inactive</code>, <code>1</code>, <code>0</code>, <code>true</code>, <code>false</code> — or leave blank for active.</p>
+        <p><b>Email</b> is optional. Skip the column if not needed.</p>
+      </div>
+    </details>
+
     <input type="text" id="user-search" class="search-input"
            placeholder="Search by name, phone, email…" oninput="filterUsers()">
 
-    <div id="import-result" class="form-error" hidden style="margin: 12px 0;"></div>
+    <div id="import-result" class="form-success" hidden style="margin: 12px 0;">
+      <span id="import-result-msg"></span>
+      <button type="button" class="btn small" id="import-result-reload" onclick="location.reload()" hidden style="margin-left: 12px;">Reload to see new users →</button>
+    </div>
 
     <div class="table-wrap">
       <table class="table">

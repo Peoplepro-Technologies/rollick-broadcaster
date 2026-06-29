@@ -24,14 +24,34 @@ PHONE_RE = re.compile(r"^\d{10}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def _normalize_phone(raw: str) -> str | None:
+    """Tolerate common Indian-mobile formats and return the 10-digit form.
+
+    Accepts: 9876543210, +91 98765 43210, +91-9876543210, (987) 654-3210,
+    91 98765 43210, 0 98765 43210, etc. Returns None if no 10 digits survive
+    cleaning (so caller can raise the right error).
+    """
+    if raw is None:
+        return None
+    # Drop everything that's not a digit.
+    digits = re.sub(r"\D+", "", str(raw))
+    # Strip leading country code (91) or trunk prefix (0) if 12/11 digits remain.
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    return digits if len(digits) == 10 else None
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _validate_phone(phone: str) -> str:
-    if not isinstance(phone, str) or not PHONE_RE.match(phone):
+    norm = _normalize_phone(phone)
+    if not norm or not PHONE_RE.match(norm):
         raise HTTPException(status_code=400, detail="invalid_phone")
-    return phone
+    return norm
 
 
 def _validate_email(email: Optional[str]) -> Optional[str]:
@@ -199,7 +219,9 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                 errors.append({"row": idx, "reason": "name_or_phone_missing"})
                 skipped += 1
                 continue
-            if not PHONE_RE.match(d["phone"]):
+            # Normalize phone — accept +91, spaces, dashes, parens, leading 0.
+            norm_phone = _normalize_phone(d["phone"])
+            if not norm_phone:
                 errors.append({"row": idx, "reason": "invalid_phone"})
                 skipped += 1
                 continue
@@ -209,7 +231,7 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                 continue
 
             existing = conn.execute(
-                "SELECT id FROM users WHERE phone = ?", (d["phone"],)
+                "SELECT id FROM users WHERE phone = ?", (norm_phone,)
             ).fetchone()
 
             try:
@@ -229,7 +251,7 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                     conn.execute(
                         "INSERT INTO users (name, phone, email, department, location, is_active, created_at) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (d["name"], d["phone"], d["email"] or None,
+                        (d["name"], norm_phone, d["email"] or None,
                          d["department"] or None, d["location"] or None,
                          1 if d["is_active"] else 0, _now()),
                     )
@@ -253,6 +275,28 @@ def export_to_xlsx() -> bytes:
             u["department"] or "", u["location"] or "",
             "active" if u["is_active"] else "inactive",
         ])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def export_template_xlsx() -> bytes:
+    """Return a blank .xlsx with just the header row + 2 example rows.
+    Lets users bulk-add without first exporting the live list."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "users"
+    ws.append(EXCEL_HEADERS)
+    # Two example rows so the format is unambiguous.
+    ws.append(["Asha Kumar", "9876543210", "[email protected]", "Engineering", "Bangalore", "active"])
+    ws.append(["Raj Patel",  "9123456780", "[email protected]", "Sales",      "Mumbai",    "active"])
+    # Header row bold for visibility.
+    from openpyxl.styles import Font
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    # Reasonable column widths.
+    for i, w in enumerate([18, 14, 26, 14, 14, 12], start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

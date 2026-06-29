@@ -41,11 +41,11 @@ def _isolate_db(test_db_path: Path, monkeypatch):
     monkeypatch.setenv("WHATSAPP_PHONE_ID", "")
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "")
     # Force re-init since settings are cached.
-    from broadcaster.settings import get_settings
+    from broadcaster.settings import bust_settings_cache
     from broadcaster.db import init_db
     from broadcaster.services.admin import bootstrap_admin
     from broadcaster.services.scheduler import shutdown
-    get_settings.cache_clear()
+    bust_settings_cache()
     init_db()
     bootstrap_admin()
     # Reset the scheduler singleton between tests so job state from a

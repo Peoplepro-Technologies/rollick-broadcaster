@@ -3,25 +3,32 @@
 {% block body_class %}login-shell{% endblock %}
 
 {% block body %}
-<div class="login-card">
-  <div class="login-logo">📡</div>
-  <h2>Sign in</h2>
-  <p class="sub">{{ app_name }} — admin console</p>
+<header class="login-topbar">
+  <a href="/admin/login" class="topbar-brand">
+    <img src="/static/img/logo.png" alt="Rollick">
+  </a>
+</header>
 
-  {% if error %}
-  <div class="form-error">Invalid username or password.</div>
-  {% endif %}
+<section class="login-hero">
+  <div class="login-card">
+    <h2>Sign in</h2>
+    <p class="sub">Admin console</p>
 
-  <form id="login-form" method="post" action="/api/auth/login" autocomplete="off">
-    <label for="username">Username</label>
-    <input id="username" name="username" required autofocus>
+    {% if error %}
+    <div class="form-error">Invalid username or password.</div>
+    {% endif %}
 
-    <label for="password" style="margin-top:14px;display:block;">Password</label>
-    <input id="password" name="password" type="password" required>
+    <form id="login-form" method="post" action="/api/auth/login" autocomplete="off">
+      <label for="username">Username</label>
+      <input id="username" name="username" required autofocus>
 
-    <button type="submit" class="btn" style="width:100%;margin-top:24px;justify-content:center;">
-      Sign in
-    </button>
-  </form>
-</div>
+      <label for="password" style="margin-top:14px;display:block;">Password</label>
+      <input id="password" name="password" type="password" required>
+
+      <button type="submit" class="btn" style="width:100%;margin-top:24px;justify-content:center;">
+        Sign in
+      </button>
+    </form>
+  </div>
+</section>
 {% endblock %}

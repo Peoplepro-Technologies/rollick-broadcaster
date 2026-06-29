@@ -1,7 +1,10 @@
 """Application settings loaded from environment variables.
 
 Secrets must come from env (never the settings DB table). Non-secret
-preferences may be overridden via the settings DB table at runtime.
+preferences may be overridden via the settings DB table at runtime —
+`get_settings()` returns env values merged with any DB-stored overrides.
+Call `bust_settings_cache()` after writes so subsequent reads see the
+new values.
 """
 from __future__ import annotations
 
@@ -62,5 +65,37 @@ class Settings(BaseSettings):
 
 
 @lru_cache
-def get_settings() -> Settings:
+def _env_settings() -> Settings:
+    """Pure env-based settings. Cached so the disk read happens once."""
     return Settings()
+
+
+def get_settings() -> Settings:
+    """Effective settings: env values overridden by DB-stored prefs.
+
+    DB overrides apply to non-secret keys only. Secrets (smtp_pass,
+    whatsapp_access_token, whatsapp_app_secret, session_secret,
+    ip_hash_pepper, media_sign_secret) are rejected at the API layer so
+    they never reach the DB — those fields always come from env.
+    """
+    base = _env_settings()
+    try:
+        from broadcaster.services.settings import all_visible
+        overrides = all_visible()
+    except Exception:
+        # DB may not be ready at import time; fall back to env.
+        overrides = {}
+    if not overrides:
+        return base
+    # Coerce: Pydantic already typed the fields. Strings get coerced.
+    merged = {**base.model_dump(), **overrides}
+    return Settings(**merged)
+
+
+def bust_settings_cache() -> None:
+    """Clear cached env-based settings so DB overrides take effect.
+
+    Call this from the settings API after writes. The runtime Settings
+    is rebuilt lazily on the next `get_settings()` call.
+    """
+    _env_settings.cache_clear()

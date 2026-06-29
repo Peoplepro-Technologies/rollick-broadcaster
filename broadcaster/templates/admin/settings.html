@@ -9,12 +9,12 @@
   <div class="page-head">
     <div>
       <h1>Settings</h1>
-      <p class="sub">Configure integrations (secrets are loaded from environment, never stored here)</p>
+      <p class="sub">Configure your app — server-internal secrets (session key, hash pepper) stay in <code>.env</code>; everything else is editable here and stored in the database.</p>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-head"><h2>Branding</h2></div>
+    <div class="card-head"><h2>Branding &amp; links</h2></div>
     <form id="settings-form" onsubmit="submitSettings(event)">
       <label class="field">
         <span>App brand name</span>
@@ -62,24 +62,112 @@
   </div>
 
   <div class="card">
-    <div class="card-head"><h2>SMTP</h2></div>
-    <p class="muted" style="font-size: 13px;">
-      SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM are loaded
-      from environment. Use the test button to verify.
+    <div class="card-head">
+      <h2>📧 SMTP</h2>
+      <div class="actions">
+        <button type="button" class="btn secondary small" onclick="testSmtp()">Send Test Email</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size: 13px; margin-bottom: 18px;">
+      Email delivery config. <b>All fields including the password</b> can be edited here and saved to the database — overrides take effect immediately without restarting.
+      Secrets are stored <b>plain-text in <code>broadcaster.db</code></b>; protect the DB file with OS permissions.
     </p>
-    <button class="btn small" onclick="testSmtp()">📧 Send Test Email</button>
-    <div id="smtp-result" class="form-error" hidden style="margin-top: 12px;"></div>
+
+    <form id="smtp-form" onsubmit="submitChannelForm(event, 'smtp')">
+      <div class="grid-2">
+        <label class="field">
+          <span>SMTP Host</span>
+          <input name="smtp_host" value="{{ runtime.smtp_host }}"
+                 placeholder="smtp.office365.com">
+        </label>
+        <label class="field">
+          <span>SMTP Port</span>
+          <input name="smtp_port" type="number" min="1" max="65535"
+                 value="{{ runtime.smtp_port }}" placeholder="587">
+        </label>
+      </div>
+      <div class="grid-2">
+        <label class="field">
+          <span>SMTP Username</span>
+          <input name="smtp_user" value="{{ runtime.smtp_user }}"
+                 placeholder="user@example.com" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>SMTP From Address</span>
+          <input name="smtp_from" value="{{ runtime.smtp_from }}"
+                 placeholder="noreply@example.com">
+        </label>
+      </div>
+      <label class="field">
+        <span>SMTP Password <span class="muted">(stored in DB — masked in input)</span></span>
+        <input name="smtp_pass" type="password" value="{{ runtime.smtp_pass }}"
+               placeholder="••••••••" autocomplete="off">
+      </label>
+
+      <div id="smtp-error" class="form-error" hidden></div>
+      <div id="smtp-success" class="form-success" hidden></div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn">Save SMTP</button>
+      </div>
+    </form>
+
+    <div id="smtp-test-result" class="form-error" hidden style="margin-top: 12px;"></div>
   </div>
 
   <div class="card">
-    <div class="card-head"><h2>WhatsApp</h2></div>
-    <p class="muted" style="font-size: 13px;">
-      WHATSAPP_PHONE_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET
-      are loaded from environment. Real sends happen during broadcast
-      delivery — there is no recipient-less test endpoint.
+    <div class="card-head">
+      <h2>📱 WhatsApp</h2>
+      <div class="actions">
+        <button type="button" class="btn secondary small" onclick="testWhatsapp()">Check Credentials</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size: 13px; margin-bottom: 18px;">
+      WhatsApp Business API config. <b>All fields including the access token and app secret</b> can be edited here and saved to the database.
+      Secrets are stored <b>plain-text in <code>broadcaster.db</code></b>; protect the DB file with OS permissions.
     </p>
-    <button class="btn small secondary" onclick="testWhatsapp()">📱 Check WhatsApp</button>
-    <div id="wa-result" class="form-error" hidden style="margin-top: 12px;"></div>
+
+    <form id="wa-form" onsubmit="submitChannelForm(event, 'wa')">
+      <div class="grid-2">
+        <label class="field">
+          <span>WhatsApp Phone ID</span>
+          <input name="whatsapp_phone_id" value="{{ runtime.whatsapp_phone_id }}"
+                 placeholder="123456789012345">
+        </label>
+        <label class="field">
+          <span>API Version</span>
+          <input name="whatsapp_api_version" value="{{ runtime.whatsapp_api_version }}"
+                 placeholder="v21.0">
+        </label>
+      </div>
+      <label class="field">
+        <span>Default Country Code <span class="muted">(for local → international phone formatting)</span></span>
+        <input name="whatsapp_country_code" value="{{ runtime.whatsapp_country_code }}"
+               placeholder="91" maxlength="4">
+      </label>
+
+      <div class="grid-2">
+        <label class="field">
+          <span>Access Token <span class="muted">(stored in DB — masked in input)</span></span>
+          <input name="whatsapp_access_token" type="password" value="{{ runtime.whatsapp_access_token }}"
+                 placeholder="EAAxxxxxxx" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>App Secret <span class="muted">(stored in DB — masked in input)</span></span>
+          <input name="whatsapp_app_secret" type="password" value="{{ runtime.whatsapp_app_secret }}"
+                 placeholder="••••••••" autocomplete="off">
+        </label>
+      </div>
+
+      <div id="wa-error" class="form-error" hidden></div>
+      <div id="wa-success" class="form-success" hidden></div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn">Save WhatsApp</button>
+      </div>
+    </form>
+
+    <div id="wa-test-result" class="form-error" hidden style="margin-top: 12px;"></div>
   </div>
 </main>
 {% endblock %}
@@ -91,19 +179,40 @@ async function submitSettings(ev) {
   const fd = new FormData(ev.target);
   const payload = {};
   for (const [k, v] of fd.entries()) payload[k] = v;
-  const errEl = document.getElementById('settings-error');
-  const okEl = document.getElementById('settings-success');
+  await postSettings(payload, 'settings-error', 'settings-success');
+}
+
+// Generic submit for the channel forms. `which` is 'smtp' or 'wa' — used
+// to pick the right error/success banner IDs.
+async function submitChannelForm(ev, which) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const payload = {};
+  for (const [k, v] of fd.entries()) payload[k] = v;
+  await postSettings(
+    payload,
+    which + '-error',
+    which + '-success',
+  );
+}
+
+async function postSettings(payload, errId, okId) {
+  const errEl = document.getElementById(errId);
+  const okEl = document.getElementById(okId);
   errEl.hidden = okEl.hidden = true;
   const r = await fetch('/api/settings', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(payload),
   });
+  const b = await r.json().catch(() => ({}));
   if (r.ok) {
-    const b = await r.json();
-    okEl.textContent = `Saved ${b.saved} setting${b.saved === 1 ? '' : 's'}.`;
+    const msg = `Saved ${b.saved} setting${b.saved === 1 ? '' : 's'}.` +
+                (b.rejected && b.rejected.length
+                  ? ` Rejected (secrets): ${b.rejected.join(', ')}`
+                  : '');
+    okEl.textContent = msg;
     okEl.hidden = false;
   } else {
-    const b = await r.json().catch(() => ({}));
     errEl.textContent = b.detail || `Error ${r.status}`;
     errEl.hidden = false;
   }
@@ -111,7 +220,7 @@ async function submitSettings(ev) {
 
 async function testSmtp() {
   const r = await fetch('/api/settings/test-smtp', { method: 'POST' });
-  const el = document.getElementById('smtp-result');
+  const el = document.getElementById('smtp-test-result');
   el.hidden = false;
   if (r.ok) {
     el.className = 'form-success';
@@ -124,7 +233,7 @@ async function testSmtp() {
 }
 async function testWhatsapp() {
   const r = await fetch('/api/settings/test-whatsapp', { method: 'POST' });
-  const el = document.getElementById('wa-result');
+  const el = document.getElementById('wa-test-result');
   el.hidden = false;
   if (r.ok) {
     el.className = 'form-success';

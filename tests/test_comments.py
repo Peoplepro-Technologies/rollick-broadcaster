@@ -150,8 +150,8 @@ async def test_per_session_cooldown(authed_client, client, monkeypatch):
     """Cooldown is timing-based; conftest sets it to 0 for other tests,
     so we explicitly set it back to 30 and verify a back-to-back post is blocked."""
     monkeypatch.setenv("COMMENT_COOLDOWN_SECONDS", "30")
-    from broadcaster.settings import get_settings
-    get_settings.cache_clear()
+    from broadcaster.settings import bust_settings_cache
+    bust_settings_cache()
     token = await _make_token(authed_client)
     r1 = await _post_comment(client, token, body="First")
     assert r1.status_code == 200

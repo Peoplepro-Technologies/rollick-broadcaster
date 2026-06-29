@@ -51,6 +51,18 @@ def download():
     )
 
 
+@router.get("/template")
+def template():
+    """Excel template — blank xlsx with just the header row. Use this to
+    bulk-add users without first exporting the live list."""
+    blob = users_svc.export_template_xlsx()
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="users_template.xlsx"'},
+    )
+
+
 @router.post("/upload-excel")
 async def upload_excel(
     file: UploadFile = File(...),

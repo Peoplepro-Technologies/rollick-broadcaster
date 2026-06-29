@@ -88,6 +88,56 @@ async def test_create_user_rejects_duplicate_phone(authed_client):
     assert r2.json()["detail"] == "phone_taken"
 
 
+# ── Phone normalization ─────────────────────────────────────
+
+@pytest.mark.parametrize("raw,expected", [
+    ("9876543210",   "9876543210"),   # raw 10 digits
+    ("+91 98765 43210", "9876543210"),  # +91 + spaces
+    ("+91-9876543210",  "9876543210"),  # +91 + dashes
+    ("919876543210",    "9876543210"),  # +91 no separator
+    ("09876543210",     "9876543210"),  # leading 0
+    ("(987) 654-3210",  "9876543210"),  # parens + dashes
+    ("  +91 98765 43210  ", "9876543210"),  # whitespace
+])
+async def test_create_user_normalizes_phone(authed_client, raw, expected):
+    r = await authed_client.post("/api/users", json={"name": f"User-{expected}", "phone": raw})
+    assert r.status_code == 200, r.text
+    assert r.json()["phone"] == expected
+
+
+@pytest.mark.parametrize("raw", ["abc", "12345", "98765", "+91 12", "12"])
+async def test_create_user_rejects_unparseable_phone(authed_client, raw):
+    r = await authed_client.post("/api/users", json={"name": "X", "phone": raw})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "invalid_phone"
+
+
+async def test_excel_import_normalizes_phones(authed_client):
+    """Real-world xlsx with +91 prefixes must import successfully."""
+    blob = _xlsx_bytes([
+        ["name", "phone", "email", "department", "location", "is_active"],
+        ["Im1", "+91 98765 43210", "i1@x.com", "Eng", "BLR", "active"],
+        ["Im2", "919876543211",    "i2@x.com", "Eng", "BLR", "active"],
+        ["Im3", "(987) 654-3212",  "i3@x.com", "Eng", "BLR", "active"],
+    ])
+    files = {"file": ("users.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await authed_client.post("/api/users/upload-excel", files=files)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["inserted"] == 3
+    assert body["skipped"] == 0
+    assert body["errors"] == []
+
+    # Verify the phones were stored normalised.
+    r = await authed_client.get("/api/users", params={"q": "Im"})
+    phones = sorted(u["phone"] for u in r.json())
+    assert phones == ["9876543210", "9876543211", "9876543212"]
+
+    # Cleanup.
+    for u in r.json():
+        await authed_client.delete(f"/api/users/{u['id']}")
+
+
 # ── List / get ────────────────────────────────────────────────
 
 async def test_list_users_returns_created(authed_client):
@@ -229,3 +279,27 @@ async def test_excel_export(authed_client):
     ws = wb.active
     rows = [[c.value for c in r] for r in ws.iter_rows()]
     assert any(row[0] == "Exp" and row[1] == "1212121212" for row in rows)
+
+
+async def test_excel_template(authed_client):
+    """Blank template has only headers + example rows, no live users."""
+    # Seed a user that should NOT appear in the template.
+    await authed_client.post("/api/users", json={"name": "LiveUser", "phone": "1313131313"})
+    r = await authed_client.get("/api/users/template")
+    assert r.status_code == 200
+    assert "users_template.xlsx" in r.headers["content-disposition"]
+    import io
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(r.content), read_only=True)
+    ws = wb.active
+    rows = [[c.value for c in r] for r in ws.iter_rows()]
+    # Header row + 2 example rows only — no live users.
+    assert rows[0] == ["name", "phone", "email", "department", "location", "is_active"]
+    assert len(rows) == 3
+    # The live user must not be present.
+    assert not any(row[0] == "LiveUser" for row in rows)
+    # Clean up the seed.
+    r = await authed_client.get("/api/users")
+    for u in r.json():
+        if u["name"] == "LiveUser":
+            await authed_client.delete(f"/api/users/{u['id']}")

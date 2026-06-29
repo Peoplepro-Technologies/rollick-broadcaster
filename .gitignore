@@ -54,3 +54,4 @@ Thumbs.db
 .playwright-mcp/
 ui-*.png
 sample_media/
+entrypoint.sh
