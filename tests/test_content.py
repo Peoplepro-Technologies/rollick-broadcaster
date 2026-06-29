@@ -273,13 +273,25 @@ async def test_admin_content_page_renders_preview_thumbnails(
     # Column header is present
     assert "<th>Preview</th>" in html
 
-    # Image → real <img class="thumb">
-    assert '<img class="thumb"' in html
+    # Every media row has a button with data-preview-btn (drives the modal)
+    assert html.count("data-preview-btn") >= 6  # thumb + filename button × 3 rows
+    assert "data-mime=\"image/png\"" in html
+    assert "data-mime=\"video/mp4\"" in html
+    assert "data-mime=\"application/pdf\"" in html
+
+    # Image → <img> tag inside the thumb button
+    assert "<img src=\"/api/content/file/" in html
     assert "pic.png" in html
 
-    # Video → play-icon
-    assert "thumb-icon" in html
+    # Video → play-icon inside the thumb button
+    assert "thumb-video" in html
     assert "▶" in html
 
     # Other → doc icon
+    assert "thumb-other" in html
     assert "📎" in html
+
+    # Preview modal markup is present
+    assert 'id="preview-modal"' in html
+    assert 'id="preview-body"' in html
+    assert 'id="preview-download"' in html

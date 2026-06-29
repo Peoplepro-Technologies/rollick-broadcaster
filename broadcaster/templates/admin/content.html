@@ -58,19 +58,25 @@
           <tr>
             <td>{{ m.caption or '' }}</td>
             <td>
-              {% if m.mime_type and m.mime_type.startswith('image/') %}
-                <a href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener">
-                  <img class="thumb" src="/api/content/file/{{ m.id }}" alt="{{ m.caption }}" loading="lazy">
-                </a>
-              {% elif m.mime_type and m.mime_type.startswith('video/') %}
-                <a class="thumb thumb-icon" href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener" title="Open video">▶</a>
-              {% elif m.mime_type and m.mime_type.startswith('audio/') %}
-                <a class="thumb thumb-icon" href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener" title="Open audio">♪</a>
-              {% else %}
-                <a class="thumb thumb-icon" href="/api/content/file/{{ m.id }}" target="_blank" rel="noopener" title="Open file">📎</a>
-              {% endif %}
+              {% set kind = 'image' if m.mime_type and m.mime_type.startswith('image/') else
+                           'video' if m.mime_type and m.mime_type.startswith('video/') else
+                           'audio' if m.mime_type and m.mime_type.startswith('audio/') else
+                           'other' %}
+              <button type="button" class="thumb thumb-{{ kind }}" data-preview-btn
+                      data-id="{{ m.id }}" data-caption="{{ m.caption|e }}"
+                      data-mime="{{ m.mime_type or '' }}" data-name="{{ m.file_name|e }}"
+                      title="Preview">
+                {% if kind == 'image' %}
+                  <img src="/api/content/file/{{ m.id }}" alt="{{ m.caption }}" loading="lazy">
+                {% elif kind == 'video' %}▶
+                {% elif kind == 'audio' %}♪
+                {% else %}📎
+                {% endif %}
+              </button>
             </td>
-            <td><a href="/api/content/file/{{ m.id }}">{{ m.file_name }}</a></td>
+            <td><button type="button" class="link-btn" data-preview-btn
+                       data-id="{{ m.id }}" data-caption="{{ m.caption|e }}"
+                       data-mime="{{ m.mime_type or '' }}" data-name="{{ m.file_name|e }}">{{ m.file_name }}</button></td>
             <td>{{ m.file_size }} B</td>
             <td><span class="pill muted">{{ m.mime_type }}</span></td>
             <td><button class="btn small danger" onclick="deleteContent({{ m.id }})">Delete</button></td>
@@ -115,6 +121,27 @@
         <button type="submit" class="btn">Upload</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Preview modal: renders image / video / audio inline; offers a
+     download link for files that can't be embedded. -->
+<div id="preview-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closePreview()">
+  <div class="modal-card preview-card" onclick="event.stopPropagation()">
+    <div class="preview-head">
+      <h3 id="preview-title">Preview</h3>
+      <button type="button" class="icon-btn" onclick="closePreview()" aria-label="Close">✕</button>
+    </div>
+    <div id="preview-body" class="preview-body">
+      <!-- Filled in by openPreview() -->
+    </div>
+    <div class="preview-foot">
+      <span id="preview-meta" class="muted" style="font-size:12px;"></span>
+      <div style="display:flex;gap:8px;">
+        <a id="preview-download" class="btn secondary" href="#" download>Download</a>
+        <button type="button" class="btn" onclick="closePreview()">Close</button>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -200,5 +227,78 @@ async function submitUploadMedia(ev) {
     errEl.hidden = false;
   }
 }
+
+// ── Preview modal ───────────────────────────────────────────
+function openPreview(id, caption, mime, name) {
+  const url = `/api/content/file/${id}`;
+  const body = document.getElementById('preview-body');
+  const title = document.getElementById('preview-title');
+  const meta = document.getElementById('preview-meta');
+  const dl = document.getElementById('preview-download');
+  dl.href = url;
+  dl.setAttribute('download', name || `media-${id}`);
+  title.textContent = caption || name || 'Preview';
+  meta.textContent = `${name || ''}${mime ? ' · ' + mime : ''}`;
+
+  body.innerHTML = '';
+  if (mime && mime.startsWith('image/')) {
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = caption || name || '';
+    img.className = 'preview-media';
+    body.appendChild(img);
+    dl.textContent = 'Download image';
+  } else if (mime && mime.startsWith('video/')) {
+    const v = document.createElement('video');
+    v.src = url;
+    v.controls = true;
+    v.preload = 'metadata';
+    v.playsInline = true;
+    v.className = 'preview-media';
+    body.appendChild(v);
+    dl.textContent = 'Download video';
+  } else if (mime && mime.startsWith('audio/')) {
+    const a = document.createElement('audio');
+    a.src = url;
+    a.controls = true;
+    a.preload = 'metadata';
+    a.className = 'preview-media';
+    body.appendChild(a);
+    dl.textContent = 'Download audio';
+  } else {
+    const msg = document.createElement('p');
+    msg.className = 'muted';
+    msg.style.textAlign = 'center';
+    msg.style.padding = '24px 8px';
+    msg.innerHTML = `<b>📎 ${name || 'File'}</b><br>No inline preview available for this file type. Use Download to open or save it.`;
+    body.appendChild(msg);
+    dl.textContent = 'Download file';
+  }
+  document.getElementById('preview-modal').hidden = false;
+  document.body.style.overflow = 'hidden';  // stop background scroll
+}
+
+function closePreview() {
+  document.getElementById('preview-modal').hidden = true;
+  // Tear down media so playback stops and bytes aren't held in memory.
+  document.getElementById('preview-body').innerHTML = '';
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && !document.getElementById('preview-modal').hidden) closePreview();
+});
+
+// Delegate clicks: any [data-preview-btn] opens the modal.
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-preview-btn]');
+  if (!btn) return;
+  openPreview(
+    btn.dataset.id,
+    btn.dataset.caption,
+    btn.dataset.mime,
+    btn.dataset.name,
+  );
+});
 </script>
 {% endblock %}
