@@ -17,14 +17,10 @@
         · created {{ broadcast.created_at[:10] }}
       </p>
     </div>
-    <div>
-      {% if broadcast.status == 'draft' %}
-      <button class="btn small" onclick="scheduleBroadcast({{ broadcast.id }})">⏰ Schedule</button>
-      <button class="btn success small" onclick="sendBroadcast({{ broadcast.id }})">🚀 Send Now</button>
-      <button class="btn danger small" onclick="cancelBroadcast({{ broadcast.id }})">✕ Cancel</button>
-      {% endif %}
-      <button class="btn danger small" onclick="deleteBroadcast({{ broadcast.id }})">Delete</button>
-    </div>
+    <div data-actions
+         data-broadcast-id="{{ broadcast.id }}"
+         data-broadcast-status="{{ broadcast.status }}"
+         {% if broadcast.scheduled_at %}data-broadcast-scheduled-at="{{ broadcast.scheduled_at }}"{% endif %}></div>
   </div>
 
   <div class="card">
@@ -71,6 +67,20 @@
     </div>
   </div>
 
+  {% if broadcast.status in ['draft','queued'] %}
+    {% import "admin/_schedule_picker.html" as sp %}
+    <div class="card">
+      <div class="card-head"><h2>When to send</h2></div>
+      {% if broadcast.status == 'queued' %}
+        <p class="muted">Currently scheduled for <b>{{ broadcast.scheduled_at }}</b>. Pick a new time below and click Reschedule.</p>
+      {% endif %}
+      {{ sp.schedule_picker('schedule', broadcast.scheduled_at or '') }}
+      <div class="form-actions">
+        <button class="btn success" data-submit-button data-reschedule>Reschedule</button>
+      </div>
+    </div>
+  {% endif %}
+
   <div class="card">
     <div class="card-head">
       <h2>Analytics</h2>
@@ -103,44 +113,93 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-async function revokeLink(bid, lid) {
-  if (!confirm('Revoke this link? The recipient will see an "expired" page.')) return;
-  const r = await fetch(`/api/broadcasts/${bid}/links/${lid}/revoke`, { method: 'POST' });
-  if (r.ok) location.reload();
-  else alert('Revoke failed: ' + r.status);
+<script type="module">
+import { initSchedulePicker } from "/static/js/schedule.js";
+
+const actions = document.querySelector("[data-actions]");
+const bid            = parseInt(actions.dataset.broadcastId, 10);
+const status         = actions.dataset.broadcastStatus;
+const scheduledAtIso = actions.dataset.broadcastScheduledAt || null;
+
+if (status === "draft") {
+  actions.innerHTML = `
+    <button class="btn success small" data-act="send">🚀 Send Now</button>
+    <button class="btn danger small" data-act="cancel">✕ Cancel</button>
+    <button class="btn danger small" data-act="delete">Delete</button>
+  `;
+} else if (status === "queued") {
+  actions.innerHTML = `
+    <button class="btn danger small" data-act="cancel">✕ Cancel</button>
+    <button class="btn danger small" data-act="delete">Delete</button>
+  `;
+} else if (status === "sent") {
+  actions.innerHTML = `
+    <a class="btn small secondary" href="#links">View Links</a>
+    <button class="btn danger small" data-act="delete">Delete</button>
+  `;
 }
-async function sendBroadcast(bid) {
-  if (!confirm('Send this broadcast now? Recipients will get the message immediately.')) return;
-  const r = await fetch(`/api/broadcasts/${bid}/send`, { method: 'POST' });
-  if (r.ok) {
-    location.reload();
-  } else {
-    const body = await r.json().catch(() => ({}));
-    alert('Send failed: ' + (body.detail || r.status));
+
+actions.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button[data-act]");
+  if (!btn) return;
+  const act = btn.dataset.act;
+  if (act === "send" && !confirm("Send now? Recipients will get the message immediately.")) return;
+  if (act === "cancel" && !confirm("Cancel this broadcast?")) return;
+  if (act === "delete" && !confirm("Delete this broadcast and all its links/comments?")) return;
+  const url = act === "send"  ? `/api/broadcasts/${bid}/send`
+            : act === "cancel" ? `/api/broadcasts/${bid}/cancel`
+            : act === "delete" ? `/api/broadcasts/${bid}` : null;
+  if (!url) return;
+  const method = act === "delete" ? "DELETE" : "POST";
+  const r = await fetch(url, { method });
+  if (r.ok) location.reload();
+  else {
+    const b = await r.json().catch(() => ({}));
+    alert(`Action failed: ${b.detail || r.status}`);
   }
-}
-async function cancelBroadcast(bid) {
-  if (!confirm('Cancel this broadcast?')) return;
-  const r = await fetch(`/api/broadcasts/${bid}/cancel`, { method: 'POST' });
-  if (r.ok) location.reload();
-  else alert('Cancel failed: ' + r.status);
-}
-async function scheduleBroadcast(bid) {
-  const when = prompt('Schedule for (ISO 8601, e.g. 2026-12-31T10:00:00+00:00):');
-  if (!when) return;
-  const r = await fetch(`/api/broadcasts/${bid}/schedule`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ scheduled_at: when }),
+});
+
+const pickerBlock = document.querySelector(".when-block");
+if (pickerBlock) {
+  const ctl = initSchedulePicker(pickerBlock, { initial: scheduledAtIso || "" });
+  document.querySelector("[data-reschedule]")?.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    const iso = ctl.getScheduledIso();
+    const mode = ctl.getMode();
+    if (mode === "schedule" && !iso) { alert("Pick a time first."); return; }
+    if (mode === "send_now") {
+      const r = await fetch(`/api/broadcasts/${bid}/send`, { method: "POST" });
+      if (r.ok) location.reload();
+      else {
+        const b = await r.json().catch(() => ({}));
+        alert(`Send failed: ${b.detail || r.status}`);
+      }
+      return;
+    }
+    if (mode === "draft") {
+      alert("To move to draft, click Cancel then reopen.");
+      return;
+    }
+    const r = await fetch(`/api/broadcasts/${bid}/schedule`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ scheduled_at: iso }),
+    });
+    if (r.ok) location.reload();
+    else {
+      const b = await r.json().catch(() => ({}));
+      alert(`Schedule failed: ${b.detail || r.status}`);
+    }
   });
+}
+
+// Keep revokeLink global so any inline onclick="revokeLink(...)" continues to work.
+async function revokeLink(bid, lid) {
+  if (!confirm("Revoke this link? The recipient will see an expired page.")) return;
+  const r = await fetch(`/api/broadcasts/${bid}/links/${lid}/revoke`, { method: "POST" });
   if (r.ok) location.reload();
-  else { const b = await r.json().catch(()=>({})); alert('Schedule failed: ' + (b.detail || r.status)); }
+  else alert("Revoke failed: " + r.status);
 }
-async function deleteBroadcast(bid) {
-  if (!confirm('Delete this broadcast and all its links/comments/views? This cannot be undone.')) return;
-  const r = await fetch(`/api/broadcasts/${bid}`, { method: 'DELETE' });
-  if (r.ok) location.href = '/admin/broadcasts';
-  else alert('Delete failed: ' + r.status);
-}
+window.revokeLink = revokeLink;
 </script>
 {% endblock %}
