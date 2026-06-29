@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone     ON users(phone);
 CREATE INDEX        IF NOT EXISTS idx_users_dept      ON users(department) WHERE is_active=1;
 CREATE INDEX        IF NOT EXISTS idx_users_location  ON users(location)   WHERE is_active=1;
+CREATE INDEX        IF NOT EXISTS idx_users_created_at ON users(created_at);
 
 -- ── Groups ─────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS groups (
