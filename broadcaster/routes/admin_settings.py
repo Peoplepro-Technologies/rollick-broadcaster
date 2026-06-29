@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from broadcaster.routes.admin_auth import require_admin
 from broadcaster.services import settings as settings_svc
+from broadcaster.settings import bust_settings_cache, get_settings
 
 router = APIRouter(
     prefix="/api/settings",
@@ -14,28 +15,47 @@ router = APIRouter(
 )
 
 
+# Server-internal secrets that must NEVER be settable from the UI.
+# These are NOT user-supplied credentials — they're cryptographic
+# material the server generates/uses internally. Keep them in .env only.
+#
+# User-supplied credentials (smtp_pass, whatsapp_access_token,
+# whatsapp_app_secret) ARE editable from the UI and stored in the DB.
+FORBIDDEN_KEYS = {
+    "session_secret", "ip_hash_pepper", "media_sign_secret",
+}
+
+
 @router.get("")
-def get_settings():
-    """Return all settings from the DB. Secrets (SMTP_*, WHATSAPP_*) are
-    never read from the DB — they come from env. The frontend uses
-    /api/auth/me + the /test-* endpoints to verify what's configured.
-    """
+def get_settings_db():
+    """Return DB-stored settings overrides (non-secret)."""
     return settings_svc.all_visible()
+
+
+@router.get("/runtime")
+def get_runtime_settings():
+    """Return effective settings (env + DB overrides) for the UI to
+    prefill the SMTP/WhatsApp forms. Returns the actual secret values
+    so admin can edit them in place (DB-stored, plain-text — see note
+    on the settings page)."""
+    return settings_svc.runtime_overrides()
 
 
 @router.post("")
 def update_settings(payload: dict):
-    """Upsert a batch of keys. Rejects any key that looks like a secret."""
-    forbidden = {"smtp_pass", "whatsapp_access_token", "whatsapp_app_secret",
-                 "session_secret", "ip_hash_pepper", "media_sign_secret"}
+    """Upsert a batch of keys. Rejects any key that looks like a secret.
+    After saving, the settings cache is busted so subsequent reads see
+    the new values without restarting the server."""
     saved = 0
     rejected = []
     for k, v in payload.items():
-        if k in forbidden:
+        if k in FORBIDDEN_KEYS:
             rejected.append(k)
             continue
         settings_svc.set_(k, str(v) if v is not None else "")
         saved += 1
+    if saved:
+        bust_settings_cache()
     return {"saved": saved, "rejected": rejected}
 
 

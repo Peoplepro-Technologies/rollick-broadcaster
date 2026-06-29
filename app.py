@@ -261,6 +261,7 @@ def admin_settings_page(request: Request):
         {"app_name": get_settings().app_name, "active_nav": "settings",
          "admin": {"username": "admin"},
          "settings": settings_svc.all_visible(),
+         "runtime": settings_svc.runtime_overrides(),
          "base_public_url": get_settings().base_public_url},
     )
 

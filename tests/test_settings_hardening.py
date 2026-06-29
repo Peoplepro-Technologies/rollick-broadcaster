@@ -124,3 +124,37 @@ async def test_settings_require_auth(client):
     assert r.status_code == 401
     r = await client.post("/api/settings", json={"x": "y"})
     assert r.status_code == 401
+
+
+# ── runtime_overrides + admin settings page ────────────────
+
+async def test_settings_page_renders(authed_client):
+    """The /admin/settings page must not 500 because runtime context is
+    missing — the template references {{ runtime.smtp_host }} et al."""
+    r = await authed_client.get("/admin/settings")
+    assert r.status_code == 200
+    html = r.text
+    assert 'name="smtp_host"' in html
+    assert 'name="smtp_pass"' in html
+    assert 'name="whatsapp_phone_id"' in html
+    assert 'name="whatsapp_access_token"' in html
+
+
+async def test_runtime_endpoint_returns_expected_keys(authed_client):
+    r = await authed_client.get("/api/settings/runtime")
+    assert r.status_code == 200
+    body = r.json()
+    for key in ("smtp_host", "smtp_port", "smtp_user", "smtp_from",
+                "smtp_pass", "whatsapp_phone_id", "whatsapp_api_version",
+                "whatsapp_country_code", "whatsapp_access_token",
+                "whatsapp_app_secret"):
+        assert key in body, f"missing key: {key}"
+
+
+def test_runtime_overrides_helper_shape():
+    from broadcaster.services import settings as settings_svc
+    body = settings_svc.runtime_overrides()
+    assert isinstance(body, dict)
+    for key in ("smtp_host", "smtp_pass", "whatsapp_phone_id",
+                "whatsapp_access_token", "whatsapp_app_secret"):
+        assert key in body, f"helper missing key: {key}"
