@@ -17,6 +17,17 @@
     <a href="/admin/broadcasts/new" class="btn success">+ New Broadcast</a>
   </div>
 
+  {# ── Filter bar (populated in Task 3) ── #}
+  {# Placeholder so the route can hand over new context without 500-ing. #}
+  {% if applied is defined %}
+  {# TODO(task-3): replace with full filter form. #}
+  {% endif %}
+
+  {# ── Counter grid (populated in Task 3) ── #}
+  {% if counts is defined %}
+  {# TODO(task-3): replace with full counter-grid markup. #}
+  {% endif %}
+
   <div class="card">
     <div class="card-head">
       <h2>All Broadcasts</h2>

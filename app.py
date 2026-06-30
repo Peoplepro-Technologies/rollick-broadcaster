@@ -7,6 +7,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -81,6 +82,66 @@ async def add_security_headers(request, call_next):
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def _validate_filters(query_params) -> tuple[dict, Optional[str]]:
+    """Read category/channel/date_range filter query params and return
+    (cleaned_filters, flash_message_or_None).
+
+    Rules (see docs/superpowers/specs/2026-06-30-broadcast-analytics-
+    filtering-design.md for the authoritative definitions):
+
+      - Empty / whitespace values are dropped.
+      - Unknown category values are dropped (no error).
+      - Unknown channel values are dropped (no error).
+      - date_from > date_to  → both dropped, flash.
+      - Only one date bound  → both dropped, flash.
+      - Unparseable dates    → treated as absent (no flash).
+    """
+    category = (query_params.get("category") or "").strip()
+    channel = (query_params.get("channel") or "").strip()
+    date_from = (query_params.get("date_from") or "").strip()
+    date_to = (query_params.get("date_to") or "").strip()
+
+    flash: Optional[str] = None
+    cleaned = {
+        "category": category,
+        "channel": channel,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+    if (date_from and not date_to) or (date_to and not date_from):
+        cleaned["date_from"] = ""
+        cleaned["date_to"] = ""
+        flash = "Pick both dates or leave both empty."
+    elif date_from and date_to:
+        try:
+            from datetime import date as _date
+            d_from = _date.fromisoformat(date_from)
+            d_to = _date.fromisoformat(date_to)
+        except (TypeError, ValueError):
+            cleaned["date_from"] = ""
+            cleaned["date_to"] = ""
+            flash = "Date inputs must be valid dates."
+        else:
+            if d_from > d_to:
+                cleaned["date_from"] = ""
+                cleaned["date_to"] = ""
+                flash = f"date_from ({date_from}) cannot be after date_to ({date_to})."
+
+    # Drop unknown category silently (no flash — could be a hand-edited URL).
+    if cleaned["category"]:
+        from broadcaster.services import broadcasts as _bc
+        valid_categories = set(_bc.distinct_categories())
+        if cleaned["category"] not in valid_categories:
+            cleaned["category"] = ""
+
+    # Drop unknown channel silently (whitelist).
+    if cleaned["channel"] and cleaned["channel"] not in ("whatsapp", "email", "both"):
+        cleaned["channel"] = ""
+
+    return cleaned, flash
 
 
 def _status_pill_class(status: str) -> str:
@@ -209,17 +270,44 @@ def admin_broadcasts_page(request: Request):
     if admin_auth.current_admin_id(request) is None:
         return RedirectResponse("/admin/login", status_code=303)
     from broadcaster.services import broadcasts as bc_svc
+
+    filters, filter_flash = _validate_filters(request.query_params)
+
     # If the user was bounced here from a deleted/missing broadcast,
     # show a one-shot message so they know what happened.
-    missing_id = request.query_params.get("missing")
-    flash = None
-    if missing_id:
-        flash = f"Broadcast #{missing_id} no longer exists (it may have been deleted)."
+    flash = filter_flash
+    if not flash:
+        missing_id = request.query_params.get("missing")
+        if missing_id:
+            flash = f"Broadcast #{missing_id} no longer exists (it may have been deleted)."
+
+    broadcasts = bc_svc.list_broadcasts(
+        category=filters["category"] or None,
+        channel=filters["channel"] or None,
+        date_from=filters["date_from"] or None,
+        date_to=filters["date_to"] or None,
+    )
+    counts = bc_svc.count_broadcasts_by_category_channel(
+        category=filters["category"] or None,
+        channel=filters["channel"] or None,
+        date_from=filters["date_from"] or None,
+        date_to=filters["date_to"] or None,
+    )
+    category_options = bc_svc.distinct_categories()
+    applied = {
+        "category": filters["category"],
+        "channel": filters["channel"],
+        "date_from": filters["date_from"],
+        "date_to": filters["date_to"],
+    }
     return templates.TemplateResponse(
         request, "admin/broadcasts_list.html",
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
          "admin": {"username": "admin"},
-         "broadcasts": bc_svc.list_broadcasts(),
+         "broadcasts": broadcasts, "counts": counts,
+         "applied": applied,
+         "category_options": category_options,
+         "channel_options": ["whatsapp", "email", "both"],
          "flash": flash},
     )
 
