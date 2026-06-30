@@ -36,8 +36,8 @@
         <label class="field">
           <span>Delivery Channel *</span>
           <select name="delivery_channel">
+            <option value="email" selected>Email</option>
             <option value="whatsapp">WhatsApp</option>
-            <option value="email">Email</option>
             <option value="both">Both</option>
           </select>
         </label>
@@ -60,8 +60,12 @@
         <textarea name="message_text" rows="4" placeholder="Hello! Here's the latest update…"></textarea>
       </label>
 
-      <fieldset class="field">
+      <fieldset class="field" data-target-groups>
         <legend>Target Groups</legend>
+        <label class="check" style="margin-bottom:8px;font-weight:600;">
+          <input type="checkbox" name="all_groups" value="1">
+          <span>All groups <small>(target every group)</small></span>
+        </label>
         <div class="multi-select">
           {% for g in groups %}
           <label class="check">
@@ -74,8 +78,12 @@
         </div>
       </fieldset>
 
-      <fieldset class="field">
+      <fieldset class="field" data-target-users>
         <legend>Target Individual Users (optional)</legend>
+        <label class="check" style="margin-bottom:8px;font-weight:600;">
+          <input type="checkbox" name="all_users" value="1">
+          <span>All users <small>(target every user)</small></span>
+        </label>
         <div class="multi-select" style="max-height: 200px; overflow-y: auto;">
           {% for u in users %}
           <label class="check">
@@ -95,9 +103,17 @@
 
       <div id="compose-error" class="form-error" hidden></div>
 
+      <div id="compose-overlay" class="compose-overlay" hidden>
+        <div class="compose-overlay-inner">
+          <div class="compose-overlay-spinner" aria-hidden="true"></div>
+          <div id="compose-overlay-label" class="compose-overlay-label">Submitting…</div>
+          <div class="compose-overlay-sub">Please wait — this may take a few seconds.</div>
+        </div>
+      </div>
+
       <div class="form-actions">
         <a href="/admin/broadcasts" class="btn secondary">Cancel</a>
-        <button type="submit" class="btn success" data-submit-button>Schedule</button>
+        <button type="submit" class="btn success" data-submit-button data-default-label="Schedule">Schedule</button>
       </div>
     </form>
   </div>
@@ -119,31 +135,80 @@ async function submitCompose(ev) {
       scheduled_at = new Date(local).toISOString();
     }
   }
+
+  // "All groups" / "All users" → expand to every ID in the fieldset.
+  let group_ids = fd.getAll('group_ids').map(Number);
+  let user_ids  = fd.getAll('user_ids').map(Number);
+  if (fd.get('all_groups')) {
+    const fs = form.querySelector('[data-target-groups]');
+    group_ids = Array.from(fs.querySelectorAll('input[name="group_ids"]')).map(i => Number(i.value));
+  }
+  if (fd.get('all_users')) {
+    const fs = form.querySelector('[data-target-users]');
+    user_ids = Array.from(fs.querySelectorAll('input[name="user_ids"]')).map(i => Number(i.value));
+  }
+
   const payload = {
     title: fd.get('title'),
     category: fd.get('category'),
-    delivery_channel: fd.get('delivery_channel'),
+    delivery_channel: fd.get('delivery_channel') || 'email',
     message_text: fd.get('message_text') || null,
     content_id: fd.get('content_id') || null,
-    group_ids: fd.getAll('group_ids').map(Number),
-    user_ids: fd.getAll('user_ids').map(Number),
+    group_ids, user_ids,
     generate_links: !!fd.get('generate_links'),
     mode, scheduled_at,
   };
+
   const err = document.getElementById('compose-error');
   err.hidden = true;
-  const r = await fetch('/api/broadcasts', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload),
+
+  // ── Loading indicator: disable button, label per mode, full-screen overlay ──
+  const overlay = document.getElementById('compose-overlay');
+  const labelEl = document.getElementById('compose-overlay-label');
+  const submitBtn = form.querySelector('[data-submit-button]');
+  const submitLabel = (submitBtn && submitBtn.dataset.defaultLabel) || (submitBtn ? submitBtn.textContent : 'Submit');
+  const modeLabel = mode === 'send_now' ? 'Sending…'
+                  : mode === 'draft'   ? 'Saving draft…'
+                  : 'Scheduling…';
+  if (labelEl) labelEl.textContent = modeLabel;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = modeLabel;
+  }
+  form.querySelectorAll('input, select, textarea, button, a').forEach(el => {
+    if (el !== submitBtn) el.dataset._wasDisabled === undefined && (el.dataset._wasDisabled = el.disabled ? '1' : '0');
+    el.disabled = true;
   });
-  if (r.ok) {
-    const body = await r.json();
-    location.href = `/admin/broadcasts/${body.id}`;
-  } else {
-    const b = await r.json().catch(()=>({}));
-    err.textContent = b.detail || `Error ${r.status}`;
+  overlay.hidden = false;
+
+  try {
+    const r = await fetch('/api/broadcasts', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) {
+      const body = await r.json();
+      location.href = `/admin/broadcasts/${body.id}`;
+      return; // leave overlay up — page is navigating away
+    } else {
+      const b = await r.json().catch(()=>({}));
+      err.textContent = b.detail || `Error ${r.status}`;
+      err.hidden = false;
+    }
+  } catch (e) {
+    err.textContent = e && e.message ? e.message : 'Network error';
     err.hidden = false;
   }
+
+  // ── Restore on error ──
+  overlay.hidden = true;
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = submitLabel;
+  }
+  form.querySelectorAll('input, select, textarea, button').forEach(el => {
+    if (el.dataset._wasDisabled !== '1') el.disabled = false;
+  });
 }
 </script>
 
@@ -152,5 +217,39 @@ import { initSchedulePicker } from "/static/js/schedule.js";
 
 const block = document.querySelector(".when-block");
 if (block) initSchedulePicker(block, {});
+</script>
+
+<script>
+// Live submit-button label + dim child list when "All groups"/"All users" is ticked.
+(function () {
+  const form = document.getElementById('compose-form');
+  if (!form) return;
+  const submitBtn = form.querySelector('[data-submit-button]');
+  const defaultLabel = submitBtn?.dataset.defaultLabel || 'Submit';
+  const labels = { send_now: 'Send Now', schedule: defaultLabel, draft: 'Save Draft' };
+
+  function refresh() {
+    const checked = form.querySelector('input[name="_schedule_mode"]:checked');
+    const mode = checked ? checked.value : 'schedule';
+    if (submitBtn && !submitBtn.disabled) submitBtn.textContent = labels[mode] || defaultLabel;
+  }
+
+  form.addEventListener('change', (e) => {
+    if (e.target && e.target.name === '_schedule_mode') refresh();
+
+    // Dim child checkboxes when "All groups/users" is ticked.
+    if (e.target && e.target.name === 'all_groups') {
+      const fs = form.querySelector('[data-target-groups]');
+      const list = fs?.querySelector('.multi-select');
+      if (list) list.style.opacity = e.target.checked ? '0.45' : '';
+    }
+    if (e.target && e.target.name === 'all_users') {
+      const fs = form.querySelector('[data-target-users]');
+      const list = fs?.querySelector('.multi-select');
+      if (list) list.style.opacity = e.target.checked ? '0.45' : '';
+    }
+  });
+  refresh();
+})();
 </script>
 {% endblock %}
