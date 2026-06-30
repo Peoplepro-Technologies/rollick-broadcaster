@@ -68,7 +68,6 @@ const ERROR_HUMAN = {
   duplicate_phone_in_file:   'Duplicate phone in uploaded file.',
   duplicate_email_in_file:   'Duplicate email in uploaded file.',
   duplicate_email_in_db:     'Email already exists for another user.',
-  admin_protected:           "Row matches the admin's phone and was skipped (admin protected).",
   phone_taken:               'Phone already exists; skipped (upsert off).',
   db_error:                  'Database error while saving row.',
 };

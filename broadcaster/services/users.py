@@ -207,10 +207,11 @@ def import_from_xlsx(file: UploadFile) -> dict:
       - Destructive replace: in one transaction, DELETE every non-admin user
         whose phone is NOT in this file OR whose email would collide with a
         file email — so the file is fully authoritative for the user list.
-      - Admin (lowest-id user) is always preserved AND file rows matching
-        admin's phone are skipped (admin's row is never overwritten).
+      - Admin (lowest-id user) is preserved from DELETION (never disappears),
+        but the admin's row IS updatable when the file lists admin's phone,
+        so dept/location/email changes for the admin take effect.
       - Net effect: every excel upload OVERWRITES the user list with the
-        file's contents, with admin protection.
+        file's contents; the admin row cannot be deleted but can be updated.
 
     Returns {inserted, updated, skipped, deleted, errors: [{row, reason, field, value}],
              dept_location_changed, groups_created}
@@ -330,15 +331,10 @@ def import_from_xlsx(file: UploadFile) -> dict:
                 cur = conn.execute(sql, params)
             deleted = cur.rowcount
 
-        # Upsert the surviving valid rows.
+        # Upsert the surviving valid rows. Admin's row is preserved from
+        # DELETION above (id != admin_id), but is updatable here so the
+        # file's dept/location/email for admin can change.
         for idx, d, norm_phone, email_norm in valid_rows:
-            # Admin's phone is untouchable. The file's row matching admin's
-            # phone is reported and skipped so the admin row in DB is intact.
-            if admin_phone is not None and norm_phone == admin_phone:
-                errors.append(_err(idx, "admin_protected", "phone", norm_phone))
-                skipped += 1
-                continue
-
             existing = conn.execute(
                 "SELECT id, department, location FROM users WHERE phone = ?", (norm_phone,)
             ).fetchone()
@@ -410,7 +406,6 @@ ERROR_HUMAN = {
     "duplicate_phone_in_file":    "Duplicate phone in uploaded file.",
     "duplicate_email_in_file":    "Duplicate email in uploaded file.",
     "duplicate_email_in_db":      "Email already exists for another user.",
-    "admin_protected":            "Row matches the admin's phone and was skipped (admin protected).",
     "phone_taken":                "Phone already exists; skipped (upsert off).",
     "db_error":                   "Database error while saving row.",
 }

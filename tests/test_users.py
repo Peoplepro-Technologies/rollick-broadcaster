@@ -551,32 +551,29 @@ async def test_excel_import_replace_pre_deletes_conflicting_email_user(authed_cl
     assert "7200000002" in phones      # New Owner in
 
 
-async def test_excel_import_replace_admin_row_in_file_is_skipped(authed_client):
-    """File row matching admin's phone is reported as admin_protected and skipped."""
-    # Look up the bootstrap admin row created by conftest.
+async def test_excel_import_replace_admin_row_is_updatable(authed_client):
+    """Admin's row is preserved from DELETE but UPDATABLE: when the file
+    lists admin's phone with new dept/location/email, those fields change."""
     rs = await authed_client.get("/api/users")
     admin = next(u for u in rs.json() if u["name"] == "admin" or u["id"] == 1)
     admin_phone = admin["phone"]
-    admin_email_before = admin.get("email") or ""
-    admin_name_before = admin["name"]
+    admin_id = admin["id"]
 
     blob = _xlsx_bytes([
-        ["name", "phone", "email"],
-        ["Imposter", admin_phone, "evil@x.com"],
+        ["name", "phone", "email", "department", "location"],
+        ["Asim Basak", admin_phone, "basak.asim@gmail.com", "IT", "Mumbai"],
     ])
     files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
     body = (await authed_client.post("/api/users/upload-excel", files=files)).json()
-    # The imposter row was skipped (admin_protected), so no inserts/updates.
-    assert body["inserted"] == 0 and body["updated"] == 0
-    reasons = {e["reason"] for e in body["errors"]}
-    assert "admin_protected" in reasons
+    assert body["updated"] == 1
+    assert body["skipped"] == 0
 
-    # Admin row is unchanged.
+    # Admin row updated: same id, new dept/location, same phone (so login works).
     rs = await authed_client.get("/api/users")
-    same_admin = next(u for u in rs.json() if u["id"] == admin["id"])
-    assert same_admin["name"] == admin_name_before
-    assert same_admin["email"] == admin_email_before
-    assert same_admin["phone"] == admin_phone
+    same = next(u for u in rs.json() if u["id"] == admin_id)
+    assert same["phone"] == admin_phone
+    assert same["department"] == "IT"
+    assert same["location"] == "Mumbai"
 
 
 async def test_excel_export(authed_client):
