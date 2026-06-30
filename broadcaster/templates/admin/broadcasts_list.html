@@ -17,51 +17,107 @@
     <a href="/admin/broadcasts/new" class="btn success">+ New Broadcast</a>
   </div>
 
-  {# ── Filter bar ──────────────────────────────────────────────── #}
+  {# ── Active filter chips (shown only when something is applied) ─ #}
+  {% set has_applied = applied.category or applied.channel or applied.date_from or applied.date_to %}
+  {% if has_applied %}
+  <div class="filter-chips">
+    {% if applied.category %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.channel %}channel={{ applied.channel }}{% endif %}{% if applied.date_from %}&date_from={{ applied.date_from }}{% endif %}{% if applied.date_to %}&date_to={{ applied.date_to }}{% endif %}" title="Remove category filter">category: <b>{{ applied.category }}</b> <span class="chip-x">×</span></a>{% endif %}
+    {% if applied.channel %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.category %}category={{ applied.category }}{% endif %}{% if applied.date_from %}&date_from={{ applied.date_from }}{% endif %}{% if applied.date_to %}&date_to={{ applied.date_to }}{% endif %}" title="Remove channel filter">channel: <b>{{ applied.channel }}</b> <span class="chip-x">×</span></a>{% endif %}
+    {% if applied.date_from and applied.date_to %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.category %}category={{ applied.category }}{% endif %}{% if applied.channel %}&channel={{ applied.channel }}{% endif %}" title="Remove date filter">{{ applied.date_from }} → {{ applied.date_to }} <span class="chip-x">×</span></a>{% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Filter bar (labels above each control) ─────────────────── #}
   <form method="get" action="/admin/broadcasts" class="filter-row">
-    <select name="category" class="filter-select" aria-label="Filter by category">
-      <option value="">All categories</option>
-      {% for cat in category_options %}
-      <option value="{{ cat }}" {% if cat == applied.category %}selected{% endif %}>{{ cat }}</option>
-      {% endfor %}
-    </select>
-    <select name="channel" class="filter-select" aria-label="Filter by channel">
-      <option value="">All channels</option>
-      {% for ch in channel_options %}
-      <option value="{{ ch }}" {% if ch == applied.channel %}selected{% endif %}>{{ ch }}</option>
-      {% endfor %}
-    </select>
-    <input type="date" name="date_from" value="{{ applied.date_from or '' }}"
-           class="filter-date" aria-label="Filter from date">
-    <input type="date" name="date_to" value="{{ applied.date_to or '' }}"
-           class="filter-date" aria-label="Filter to date">
-    <button type="submit" class="btn">Apply</button>
-    <a href="/admin/broadcasts" class="btn secondary">Clear</a>
+    <label class="filter-field">
+      <span class="filter-label">Category</span>
+      <select name="category" class="filter-select" aria-label="Filter by category">
+        <option value="">All</option>
+        {% for cat in category_options %}
+        <option value="{{ cat }}" {% if cat == applied.category %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">Channel</span>
+      <select name="channel" class="filter-select" aria-label="Filter by channel">
+        <option value="">All</option>
+        {% for ch in channel_options %}
+        <option value="{{ ch }}" {% if ch == applied.channel %}selected{% endif %}>{{ ch }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">From</span>
+      <input type="date" name="date_from" value="{{ applied.date_from or '' }}"
+             class="filter-date" aria-label="Filter from date">
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">To</span>
+      <input type="date" name="date_to" value="{{ applied.date_to or '' }}"
+             class="filter-date" aria-label="Filter to date">
+    </label>
+    <div class="filter-actions">
+      <button type="submit" class="btn">Apply</button>
+      <a href="/admin/broadcasts" class="btn secondary">Clear</a>
+    </div>
   </form>
 
-  {# ── Counter grid ────────────────────────────────────────────── #}
+  {# ── Counter grid (one card per category; channels as sub-rows) ─ #}
+  {% set grand_total = counts|sum(attribute='total') if counts else 0 %}
+  {% set cat_count = counts|map(attribute='category')|unique|list|length if counts else 0 %}
+  {# Group raw (category, channel) rows into per-category buckets. #}
+  {% set grouped = {} %}
+  {% for c in counts %}
+    {% set bucket = grouped.get(c.category, []) %}
+    {% set _ = bucket.append(c) %}
+    {% set _ = grouped.update({c.category: bucket}) %}
+  {% endfor %}
   {% if counts %}
+  <p class="counter-summary">
+    <b>{{ grand_total }}</b> broadcast{{ '' if grand_total == 1 else 's' }}
+    across <b>{{ cat_count }}</b> categor{{ 'y' if cat_count == 1 else 'ies' }}
+  </p>
   <div class="counter-grid">
-    {% for c in counts %}
+    {% for category, rows in grouped.items() %}
+    {% set cat_total = rows|sum(attribute='total') %}
     <div class="counter-card">
-      <div class="counter-head">{{ c.category }} · {{ c.channel }}</div>
-      <div class="counter-main">
-        <span class="counter-sent">Sent {{ c.sent }}</span>
-        <span class="dot">·</span>
-        <span class="counter-pending">Pending {{ c.pending }}</span>
+      <div class="counter-head">
+        <span class="counter-cat">{{ category }}</span>
+        <span class="counter-cat-total">{{ cat_total }} total</span>
       </div>
-      {% set other = c.sending + c.partial + c.failed + c.cancelled %}
-      {% if other > 0 %}
-      <details class="counter-other">
-        <summary>Other {{ other }}</summary>
-        <div class="counter-other-body">
-          {% if c.sending %}sending {{ c.sending }}{% endif %}
-          {% if c.partial %}{% if c.sending %} · {% endif %}partial {{ c.partial }}{% endif %}
-          {% if c.failed %}{% if c.sending or c.partial %} · {% endif %}failed {{ c.failed }}{% endif %}
-          {% if c.cancelled %}{% if c.sending or c.partial or c.failed %} · {% endif %}cancelled {{ c.cancelled }}{% endif %}
+      <div class="counter-channels">
+        {% for c in rows %}
+        <div class="counter-channel-cell">
+          <div class="counter-channel-label">
+            <span class="counter-channel-pill {{ c.channel }}">{{ c.channel }}</span>
+          </div>
+          <div class="counter-main">
+            <div class="counter-metric">
+              <span class="counter-num counter-num-sent">{{ c.sent }}</span>
+              <span class="counter-cap">Sent</span>
+            </div>
+            <div class="counter-divider"></div>
+            <div class="counter-metric">
+              <span class="counter-num counter-num-pending">{{ c.pending }}</span>
+              <span class="counter-cap">Pending</span>
+            </div>
+          </div>
+          {% set other = c.sending + c.partial + c.failed + c.cancelled %}
+          {% if other > 0 %}
+          <details class="counter-other">
+            <summary>Other <b>{{ other }}</b></summary>
+            <div class="counter-other-body">
+              {% if c.sending %}<span>sending <b>{{ c.sending }}</b></span>{% endif %}
+              {% if c.partial %}<span>partial <b>{{ c.partial }}</b></span>{% endif %}
+              {% if c.failed %}<span>failed <b>{{ c.failed }}</b></span>{% endif %}
+              {% if c.cancelled %}<span>cancelled <b>{{ c.cancelled }}</b></span>{% endif %}
+            </div>
+          </details>
+          {% endif %}
         </div>
-      </details>
-      {% endif %}
+        {% endfor %}
+      </div>
     </div>
     {% endfor %}
   </div>
