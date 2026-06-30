@@ -284,16 +284,13 @@ async def test_excel_import_triggers_rebuild_only_when_dept_changes(authed_clien
 
 
 async def test_excel_import_rebuild_fires_on_case_insensitive_new_dept(authed_client):
-    """'Eng' != 'ENG' as raw text, but lower-trim-normalized they're equal.
-
-    A follow-up import with 'eng' must NOT trigger a rebuild.
-    """
+    """'Eng' and 'eng' are the same dept after lower(trim()) — second import must NOT trigger rebuild."""
     blob1 = _xlsx_bytes([
         ["name", "phone", "department"],
         ["U1", "1111111111", "Eng"],
     ])
-    r1 = await authed_client.post("/api/users/upload-excel", files=files1 := {"file": ("u1.xlsx", _xlsx_bytes([["name","phone","department"], ["U1", "1111111111", "Eng"]]),
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    files1 = {"file": ("u1.xlsx", blob1, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r1 = await authed_client.post("/api/users/upload-excel", files=files1)
     assert r1.json()["dept_location_changed"] is True
 
     blob2 = _xlsx_bytes([
@@ -339,8 +336,6 @@ async def test_excel_import_rebuild_ignores_empty_dept(authed_client):
     r = await authed_client.post("/api/users/upload-excel", files=files)
     assert r.json()["dept_location_changed"] is False
 ```
-
-> The case-insensitive test uses a slightly indirect setup to avoid an edit-prone inline `files1` placeholder; if you prefer, fold it into a clean two-call flow.
 
 - [ ] **Step 2: Run the new tests — expect all FAIL**
 
