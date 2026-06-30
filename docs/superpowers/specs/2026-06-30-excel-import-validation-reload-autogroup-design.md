@@ -53,7 +53,7 @@ Per-row validation status is the only coupling. The modal shows it. The reload b
 - `name` non-empty after trim
 - `phone` present + normalize to 10 digits (`_normalize_phone`: strips `+91`, leading `0`, parens, spaces, dashes)
 - `email` optional + matches `^[^@\s]+@[^@\s]+\.[^@\s]+$`
-- DB-side `users.phone` UNIQUE enforced (raises `HTTPException(409, "phone_taken")`)
+- Phone conflict against the DB: existing pre-check (`SELECT id FROM users WHERE phone=?`) catches it before any INSERT; the DB UNIQUE constraint is the safety net, not the normal path.
 
 **Tier B — new for Excel import**
 - **`duplicate_phone_in_file`**: track phones seen so far in this upload; if a non-empty normalized phone matches an earlier-seen phone in the same file, error.
@@ -171,8 +171,10 @@ Inside `import_from_xlsx`, maintain one boolean across the per-row loop: `dept_l
 
 Set it true when:
 
-1. A NEW user is inserted whose `department` (or `location`) value does not currently exist in `users.department` (`SELECT EXISTS` before insert), OR
-2. An existing user is updated and the new `department`/`location` differs from the pre-update value of that column.
+1. A NEW user is inserted whose **non-empty** `department` (or `location`) value does not currently exist in `users.department` (`SELECT EXISTS` before insert), normalized to **lower(trim())** for the existence check so `"Bangalore"` and `"bangalore"` count as the same value, OR
+2. An existing user is updated and the new `department`/`location` (compared via `lower(trim(...))`) differs from the pre-update value of that column.
+
+Empty / NULL values never trigger the flag — they're "no value", not "new value".
 
 After the loop, if `dept_loc_changed`:
 
@@ -231,7 +233,7 @@ Playwright smoke (localhost:8123):
 - **Modal vs inline disclosure (vs 2026-06-29's expandable banner)**: user explicitly chose modal for clear visibility. Inline banner is harder to read with 12+ rows.
 - **Auto-reload after modal close, not immediate**: avoids "rows appear before user reads why some failed" UX bug.
 - **Conditional rebuild, not unconditional**: pure name/phone updates shouldn't pay the DELETE+INSERT cycle cost on every auto-group. Asymmetric — cheap import may not need a cheap rebuild.
-- **Existing `rebuild_auto_groups()` reused**: full wipe-and-rebuild is already correct semantics here. Per the user's 2026-06-29 decision, this function is already approved.
+- **Existing `rebuild_auto_groups()` reused**: full wipe-and-rebuild of *auto* groups (manual groups untouched) is already correct semantics here. Per the user's 2026-06-29 decision, this function is already approved.
 - **Errors CSV endpoint, not embedded in upload response**: keeps the upload response small for the common case (1 error or none). Errors CSV is opt-in.
 - **Tier C kept (upsert=true silently updates phone conflicts)**: preserves the "re-import the export" workflow which the user has not asked to break.
 - **Renames 2026-06-29 `invalid_phone`/`invalid_email` → `*_format`**: consistency with the new sibling codes; the front-end `humanizeError` map is updated together.
@@ -257,7 +259,7 @@ Playwright smoke (localhost:8123):
 - [ ] After a clean import with `inserted+updated>0`, `location.reload()` fires automatically with no button click.
 - [ ] After an import with `skipped>0`, a modal opens showing Row/Field/Value/Reason; backing-click and Escape hide the modal WITHOUT reload; Close triggers reload.
 - [ ] The manual "Reload to see new users" button is gone from the DOM.
-- [ ] When the import changes the dept/location set, `rebuild_auto_groups()` runs and `groups_created>0`; when it doesn't, the function does NOT run.
+- [ ] When the import changes the dept/location set (case+whitespace-insensitive, non-empty), `rebuild_auto_groups()` runs and `groups_created>0`; when it doesn't, the function does NOT run.
 - [ ] `POST /api/users/upload-excel/errors.csv` returns a parseable RFC-4180 CSV with the right columns, or 400 when errors is empty.
 - [ ] All pre-existing tests still pass. New tests in §9 added and green.
 - [ ] Manual smoke against `/home/asim/Desktop/user.xlsx` + a synthetic "with-errors" variant confirms both paths.
