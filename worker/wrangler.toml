@@ -1,6 +1,23 @@
 name = "rollick-broadcaster-redirect"
 main = "src/index.js"
-compatibility_date = "2025-09-01"
+# Set to today's date on new projects; bump periodically on existing ones.
+# Today: 2026-06-30. See https://developers.cloudflare.com/workers/configuration/compatibility-dates/
+compatibility_date = "2026-06-30"
+
+# Production observability — logs + traces show up in the Workers
+# Observability dashboard. head_sampling_rate=1 captures 100% of logs
+# (fine for low-traffic redirectors); traces sampled at 1% to manage
+# volume. Adjust if traffic grows. See
+# https://developers.cloudflare.com/workers/observability/
+[observability]
+enabled = true
+
+[observability.logs]
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.01
 
 # KV namespace binding — created with:
 #   wrangler kv:namespace create BACKEND_URLS
