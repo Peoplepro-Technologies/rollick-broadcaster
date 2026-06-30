@@ -20,7 +20,11 @@
     {% if media %}
     <section class="media-block card">
       {% if media.mime_type and media.mime_type.startswith('video/') %}
-        <video controls preload="metadata" playsinline style="width:100%;border-radius:var(--radius);">
+        <video controls preload="metadata" playsinline
+               controlsList="nodownload nofullscreen noremoteplayback"
+               disablepictureinpicture
+               oncontextmenu="return false"
+               style="width:100%;border-radius:var(--radius);">
           <source src="/v/{{ link.token }}/media" type="{{ media.mime_type }}">
           Your browser doesn't support embedded video.
         </video>
