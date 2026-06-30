@@ -131,10 +131,81 @@ def create_broadcast(
     return b
 
 
+# ── Filter WHERE-clause helper ────────────────────────────────────
+# Single source of truth for the category / channel / date filter that
+# the broadcasts page and the JSON API both apply. Both list_broadcasts
+# and count_broadcasts_by_category_channel call this so their result
+# sets cannot drift apart.
+#
+# Conventions:
+#   - Empty string / None filter values are dropped (no clause emitted).
+#   - date_from + date_to must BOTH be present, or the caller must
+#     pre-validate and drop the partial range (see _validate_filters
+#     in app.py). The helper emits the BETWEEN clause here regardless;
+#     the caller is responsible for not calling it with partial dates.
+#   - The date BETWEEN range uses `scheduled_at IS NULL OR ...` so
+#     unscheduled drafts pass through the filter.
+#   - The caller binds the resulting `where` string after "WHERE" and
+#     the resulting `params` list to the placeholders it defined.
+
+
+def _broadcast_filters_where(filters: dict) -> tuple[str, list]:
+    clauses: list[str] = []
+    params: list = []
+
+    category = (filters.get("category") or "").strip()
+    if category:
+        clauses.append("b.category = ?")
+        params.append(category)
+
+    channel = (filters.get("channel") or "").strip()
+    if channel:
+        clauses.append("b.delivery_channel = ?")
+        params.append(channel)
+
+    date_from = (filters.get("date_from") or "").strip()
+    date_to = (filters.get("date_to") or "").strip()
+    if date_from and date_to:
+        from datetime import datetime as _dt, timezone as _tz
+        # Use the same lexicographically-comparable ISO format the DB
+        # stores (datetime.now(timezone.utc).isoformat(timespec="seconds")
+        # gives YYYY-MM-DDTHH:MM:SS+00:00). Without a T-separator, naive
+        # strings like "2026-06-30 00:00:00" sort AFTER the stored
+        # "2026-06-30T00:00:00+00:00" — so a naive BETWEEN silently
+        # matches nothing. Use ISO-from-date and bracket the day.
+        try:
+            d_from = _dt.fromisoformat(date_from).replace(tzinfo=_tz.utc)
+            d_to = _dt.fromisoformat(date_to).replace(tzinfo=_tz.utc)
+            bound_from = d_from.replace(hour=0, minute=0, second=0, microsecond=0)
+            bound_to = d_to.replace(hour=23, minute=59, second=59, microsecond=0)
+        except (TypeError, ValueError):
+            bound_from = bound_to = None  # caller is responsible for not calling us with bad dates
+        if bound_from and bound_to:
+            clauses.append(
+                "(b.scheduled_at IS NULL OR b.scheduled_at BETWEEN ? AND ?)"
+            )
+            params.append(bound_from.isoformat(timespec="seconds"))
+            params.append(bound_to.isoformat(timespec="seconds"))
+
+    where = " AND ".join(clauses)
+    return where, params
+
+
 # ── Read ──────────────────────────────────────────────────────
 
 def list_broadcasts(status: Optional[str] = None, with_links: Optional[bool] = None,
-                    q: Optional[str] = None) -> list[dict]:
+                    q: Optional[str] = None,
+                    category: Optional[str] = None,
+                    channel: Optional[str] = None,
+                    date_from: Optional[str] = None,
+                    date_to: Optional[str] = None) -> list[dict]:
+    # Category / channel / date range come from the shared helper so
+    # the JSON API and the HTML page apply identical filters.
+    extra_where, extra_params = _broadcast_filters_where({
+        "category": category, "channel": channel,
+        "date_from": date_from, "date_to": date_to,
+    })
+
     where: list[str] = []
     params: list = []
     if status:
@@ -148,6 +219,9 @@ def list_broadcasts(status: Optional[str] = None, with_links: Optional[bool] = N
         where.append("(b.title LIKE ? OR b.message_text LIKE ?)")
         like = f"%{q}%"
         params += [like, like]
+    if extra_where:
+        where.append(extra_where)
+        params += extra_params
 
     sql = (
         "SELECT b.id, b.title, b.category, b.delivery_channel, b.status, b.scheduled_at, "
@@ -163,6 +237,60 @@ def list_broadcasts(status: Optional[str] = None, with_links: Optional[bool] = N
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def count_broadcasts_by_category_channel(
+    category: Optional[str] = None,
+    channel: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> list[dict]:
+    """One row per (category, delivery_channel) that has at least one
+    broadcast in the filtered set. Each row carries per-status counts.
+
+    Sums across rows always equal the row count of `list_broadcasts`
+    applied with the same filters — both queries go through
+    `_broadcast_filters_where` so they cannot drift apart.
+    """
+    extra_where, extra_params = _broadcast_filters_where({
+        "category": category, "channel": channel,
+        "date_from": date_from, "date_to": date_to,
+    })
+
+    sql = (
+        "SELECT  b.category, b.delivery_channel AS channel, "
+        "        SUM(CASE WHEN b.status = 'sent'                            THEN 1 ELSE 0 END) AS sent, "
+        "        SUM(CASE WHEN b.status IN ('draft','queued')               THEN 1 ELSE 0 END) AS pending, "
+        "        SUM(CASE WHEN b.status = 'sending'                         THEN 1 ELSE 0 END) AS sending, "
+        "        SUM(CASE WHEN b.status = 'partial'                         THEN 1 ELSE 0 END) AS partial, "
+        "        SUM(CASE WHEN b.status = 'failed'                          THEN 1 ELSE 0 END) AS failed, "
+        "        SUM(CASE WHEN b.status = 'cancelled'                       THEN 1 ELSE 0 END) AS cancelled, "
+        "        COUNT(*)                                                   AS total "
+        "FROM    broadcasts b"
+    )
+    params: list = []
+    if extra_where:
+        sql += " WHERE " + extra_where
+        params += extra_params
+    sql += " GROUP BY b.category, b.delivery_channel HAVING COUNT(*) > 0 ORDER BY b.category, b.delivery_channel"
+
+    with get_db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def distinct_categories() -> list[str]:
+    """Distinct categories currently in the broadcasts table, sorted.
+
+    Used to populate the filter `<select>` on the broadcasts page
+    without forcing the admin to maintain a separate categories table.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT category FROM broadcasts WHERE category IS NOT NULL "
+            "AND category != '' ORDER BY category"
+        ).fetchall()
+    return [r[0] for r in rows]
 
 
 def get_broadcast(bid: int) -> Optional[dict]:

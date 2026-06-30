@@ -440,3 +440,253 @@ async def test_list_no_flash_for_normal_visit(client):
     r = await client.get("/admin/broadcasts")
     assert r.status_code == 200
     assert 'class="flash flash-info"' not in r.text
+
+
+# ── _broadcast_filters_where ──────────────────────────────────────────────
+
+
+def test_filters_where_empty_returns_empty_clause():
+    where, params = bc_svc._broadcast_filters_where({})
+    assert where == ""
+    assert params == []
+
+
+def test_filters_where_category_adds_eq_param():
+    where, params = bc_svc._broadcast_filters_where({"category": "Promo"})
+    assert where == "b.category = ?"
+    assert params == ["Promo"]
+
+
+def test_filters_where_channel_adds_eq_param():
+    where, params = bc_svc._broadcast_filters_where({"channel": "email"})
+    assert where == "b.delivery_channel = ?"
+    assert params == ["email"]
+
+
+def test_filters_where_date_range_includes_null_passthrough():
+    where, params = bc_svc._broadcast_filters_where({
+        "date_from": "2026-06-01", "date_to": "2026-06-30",
+    })
+    assert where == "(b.scheduled_at IS NULL OR b.scheduled_at BETWEEN ? AND ?)"
+    assert params == ["2026-06-01T00:00:00+00:00", "2026-06-30T23:59:59+00:00"]
+
+
+def test_filters_where_combines_with_and():
+    where, params = bc_svc._broadcast_filters_where({
+        "category": "Promo", "channel": "whatsapp",
+        "date_from": "2026-06-01", "date_to": "2026-06-30",
+    })
+    assert where == "b.category = ? AND b.delivery_channel = ? AND (b.scheduled_at IS NULL OR b.scheduled_at BETWEEN ? AND ?)"
+    assert params == ["Promo", "whatsapp", "2026-06-01T00:00:00+00:00", "2026-06-30T23:59:59+00:00"]
+
+
+def test_filters_where_ignores_blank_strings():
+    where, params = bc_svc._broadcast_filters_where({
+        "category": "", "channel": "  ", "date_from": None,
+    })
+    assert where == ""
+    assert params == []
+
+
+def test_filters_where_partial_date_range_omits_clause():
+    """Either both date bounds or neither; partial ignored by caller."""
+    where, params = bc_svc._broadcast_filters_where({"date_from": "2026-06-01"})
+    assert where == ""
+
+
+# ── list_broadcasts new filter params ─────────────────────────────
+
+
+def _set_broadcast_status(bid: int, status: str, scheduled_at: str | None = None):
+    """Direct-DB status setter used by filter/aggregation tests so we
+    can build fixtures faster than driving the full /send pipeline."""
+    from broadcaster.db import get_db
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE broadcasts SET status = ?, scheduled_at = COALESCE(?, scheduled_at) WHERE id = ?",
+            (status, scheduled_at, bid),
+        )
+
+
+@pytest.fixture
+async def _three_broadcasts(authed_client):
+    """Three broadcasts in different cat/ch. Status determined by what
+    create_broadcast accepts (draft if no scheduled_at, queued if
+    scheduled). Tests then UPDATE status directly to set fixtures."""
+    a, = await _make_users(authed_client, ("BcastU", "7000000001", "", ""))
+    ids = []
+    for title, cat, ch in [("Promo-A", "Promo", "whatsapp"),
+                            ("Promo-B", "Promo", "email"),
+                            ("General-A", "General", "whatsapp")]:
+        r = await authed_client.post("/api/broadcasts", json={
+            "title": title, "category": cat, "delivery_channel": ch,
+            "user_ids": [a], "mode": "draft",
+        })
+        assert r.status_code == 200, r.text
+        ids.append(r.json()["id"])
+    return ids
+
+
+def test_list_broadcasts_filter_by_category(_three_broadcasts):
+    out = bc_svc.list_broadcasts(category="Promo")
+    titles = {b["title"] for b in out}
+    assert titles == {"Promo-A", "Promo-B"}
+
+
+def test_list_broadcasts_filter_by_channel(_three_broadcasts):
+    out = bc_svc.list_broadcasts(channel="whatsapp")
+    titles = {b["title"] for b in out}
+    assert titles == {"Promo-A", "General-A"}
+
+
+def test_list_broadcasts_filter_by_date_range_passes_null_through(_three_broadcasts):
+    """Two scheduled-in-range, one scheduled-out, one draft (NULL) → all four pass.
+    Note: this test mutates the 3-broadcast fixture (and so implicitly
+    trusts that the previous 3 fixtures have the same user as the 4th).
+    """
+    _set_broadcast_status(_three_broadcasts[0], "sent", "2026-06-15T12:00:00")
+    _set_broadcast_status(_three_broadcasts[1], "queued", "2026-06-15T12:00:00")
+    _set_broadcast_status(_three_broadcasts[2], "draft", "2026-07-15T12:00:00")
+
+    out = bc_svc.list_broadcasts(date_from="2026-06-01", date_to="2026-06-30")
+    titles = {b["title"] for b in out}
+    # The two 06-15 rows pass; the 07-15 row is out of range; no NULL row
+    # in this fixture (drafts without scheduled_at are created below in
+    # the date-filters tests).
+    assert "Promo-A" in titles
+    assert "Promo-B" in titles
+    assert "General-A" not in titles
+
+
+async def test_list_broadcasts_includes_null_scheduled_at_when_date_filter_set(authed_client):
+    """A broadcast whose scheduled_at is NULL must still be in the result
+    when a date filter is applied (draft pass-through)."""
+    a, = await _make_users(authed_client, ("BcastNull", "7000000099", "", ""))
+    # Create one scheduled-in-range and one scheduled-out and one NULL.
+    in_range_resp = await authed_client.post("/api/broadcasts", json={
+        "title": "InRange",
+        "category": "Promo", "delivery_channel": "email",
+        "user_ids": [a],
+        "mode": "schedule",
+        "scheduled_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    })
+    assert in_range_resp.status_code == 200, in_range_resp.text
+    in_range = in_range_resp.json()["id"]
+    out_of_range_resp = await authed_client.post("/api/broadcasts", json={
+        "title": "OutRange",
+        "category": "Promo", "delivery_channel": "email",
+        "user_ids": [a],
+        "mode": "schedule",
+        "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=60)).isoformat(),
+    })
+    assert out_of_range_resp.status_code == 200, out_of_range_resp.text
+    out_of_range = out_of_range_resp.json()["id"]
+    null_sched_resp = await authed_client.post("/api/broadcasts", json={
+        "title": "NullDraft",
+        "category": "Promo", "delivery_channel": "email",
+        "user_ids": [a], "mode": "draft",  # scheduled_at is NULL
+    })
+    assert null_sched_resp.status_code == 200, null_sched_resp.text
+    null_sched = null_sched_resp.json()["id"]
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    listed = bc_svc.list_broadcasts(date_from=today, date_to=today)
+    titles = {b["title"] for b in listed}
+    # InRange + NullDraft visible; OutRange is >today and out of range.
+    assert "InRange" in titles
+    assert "NullDraft" in titles
+    assert "OutRange" not in titles
+
+
+# ── count_broadcasts_by_category_channel ──────────────────────────
+
+
+def test_count_broadcasts_buckets_statuses_correctly(_three_broadcasts):
+    _set_broadcast_status(_three_broadcasts[0], "sent")      # Promo-A / whatsapp / sent
+    _set_broadcast_status(_three_broadcasts[1], "draft")     # Promo-B / email / draft
+    _set_broadcast_status(_three_broadcasts[2], "queued")    # General-A / whatsapp / queued
+    rows = bc_svc.count_broadcasts_by_category_channel()
+    by_key = {(r["category"], r["channel"]): r for r in rows}
+    promo_wa = by_key[("Promo", "whatsapp")]
+    assert promo_wa["sent"] == 1
+    assert promo_wa["pending"] == 0  # no draft/queued in this group
+    promo_em = by_key[("Promo", "email")]
+    assert promo_em["sent"] == 0
+    assert promo_em["pending"] == 1
+    gen_wa = by_key[("General", "whatsapp")]
+    assert gen_wa["sent"] == 0
+    assert gen_wa["pending"] == 1
+
+
+def test_count_broadcasts_excludes_partial_failed_from_pending(_three_broadcasts):
+    _set_broadcast_status(_three_broadcasts[0], "sent")
+    _set_broadcast_status(_three_broadcasts[1], "partial")
+    _set_broadcast_status(_three_broadcasts[2], "failed")
+    rows = bc_svc.count_broadcasts_by_category_channel()
+    promo_wa = [r for r in rows if (r["category"], r["channel"]) == ("Promo", "whatsapp")][0]
+    assert promo_wa["sent"] == 1
+    assert promo_wa["pending"] == 0
+    assert promo_wa["partial"] == 0
+    promo_em = [r for r in rows if (r["category"], r["channel"]) == ("Promo", "email")][0]
+    assert promo_em["pending"] == 0
+    assert promo_em["partial"] == 1
+    assert promo_em["failed"] == 0
+    gen_wa = [r for r in rows if (r["category"], r["channel"]) == ("General", "whatsapp")][0]
+    assert gen_wa["pending"] == 0
+    assert gen_wa["failed"] == 1
+
+
+def test_count_broadcasts_applies_same_filters_as_list(_three_broadcasts):
+    """Spec invariant: counts always sum to filtered table size."""
+    _set_broadcast_status(_three_broadcasts[0], "sent")
+    _set_broadcast_status(_three_broadcasts[1], "queued")
+    _set_broadcast_status(_three_broadcasts[2], "draft")
+    rows = bc_svc.count_broadcasts_by_category_channel(category="Promo")
+    total = sum(r["total"] for r in rows)
+    listed = bc_svc.list_broadcasts(category="Promo")
+    assert total == len(listed)
+    assert total == 2  # Promo-A + Promo-B
+
+
+def test_count_broadcasts_returns_empty_for_no_broadcasts():
+    assert bc_svc.count_broadcasts_by_category_channel() == []
+
+
+# ── distinct_categories ──────────────────────────────────────────
+
+
+def test_distinct_categories_returns_sorted_unique(_three_broadcasts):
+    """The _three_broadcasts fixture creates categories Promo, Promo, General."""
+    out = bc_svc.distinct_categories()
+    # Sorted, deduplicated.
+    assert out == ["General", "Promo"]
+
+
+# ── /api/broadcasts new filter kwargs (API parity) ──────────────
+
+
+async def test_api_broadcasts_accepts_same_filter_kwargs(authed_client):
+    """Spec invariant: the JSON API applies the same filter vocabulary
+    as the HTML page so client tools / scripts match what admins see."""
+    a, = await _make_users(authed_client, ("ApiFltU", "7300000001", "", ""))
+    for title, cat, ch in [("API-Promo", "Promo", "whatsapp"),
+                            ("API-General", "General", "email")]:
+        await authed_client.post("/api/broadcasts", json={
+            "title": title, "category": cat, "delivery_channel": ch,
+            "user_ids": [a], "mode": "draft",
+        })
+    r = await authed_client.get("/api/broadcasts?category=Promo&channel=email")
+    # No category=Promo + channel=email intersection → empty result.
+    assert r.status_code == 200
+    data = r.json()
+    assert data == []
+
+    r = await authed_client.get("/api/broadcasts?category=Promo")
+    assert r.status_code == 200
+    titles = {b["title"] for b in r.json()}
+    assert titles == {"API-Promo"}
+
+    r = await authed_client.get("/api/broadcasts?channel=email")
+    assert r.status_code == 200
+    titles = {b["title"] for b in r.json()}
+    assert titles == {"API-General"}
