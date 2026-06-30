@@ -18,8 +18,16 @@ def list_broadcasts(
     status: str | None = None,
     with_links: bool | None = None,
     q: str | None = None,
+    category: str | None = None,
+    channel: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
-    return bc_svc.list_broadcasts(status=status, with_links=with_links, q=q)
+    return bc_svc.list_broadcasts(
+        status=status, with_links=with_links, q=q,
+        category=category, channel=channel,
+        date_from=date_from, date_to=date_to,
+    )
 
 
 @router.post("")
