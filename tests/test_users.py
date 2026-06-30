@@ -271,6 +271,55 @@ async def test_excel_import_reports_invalid_rows(authed_client):
         assert "value" in e
 
 
+async def test_excel_import_flags_in_file_dup_phone(authed_client):
+    """Two rows with the same normalized phone both surface errors; no inserts."""
+    blob = _xlsx_bytes([
+        ["name", "phone", "email"],
+        ["DupA", "9876543210", "a@x.com"],
+        ["DupB", "+91 98765 43210", "b@x.com"],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await authed_client.post("/api/users/upload-excel", files=files)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["inserted"] == 0
+    reasons = [e["reason"] for e in body["errors"]]
+    assert reasons.count("duplicate_phone_in_file") == 2
+    # No DB writes:
+    rs = await authed_client.get("/api/users")
+    assert rs.json() == []
+
+
+async def test_excel_import_flags_in_file_dup_email(authed_client):
+    blob = _xlsx_bytes([
+        ["name", "phone", "email"],
+        ["A", "1111111111", "shared@x.com"],
+        ["B", "2222222222", "shared@x.com"],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await authed_client.post("/api/users/upload-excel", files=files)
+    body = r.json()
+    assert body["inserted"] == 0
+    reasons = [e["reason"] for e in body["errors"]]
+    assert reasons.count("duplicate_email_in_file") == 2
+
+
+async def test_excel_import_flags_db_email_conflict(authed_client):
+    """If email already belongs to another user, the imported row is skipped."""
+    await authed_client.post(
+        "/api/users", json={"name": "Owner", "phone": "5555555555", "email": "taken@x.com"}
+    )
+    blob = _xlsx_bytes([
+        ["name", "phone", "email"],
+        ["New", "6666666666", "taken@x.com"],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await authed_client.post("/api/users/upload-excel", files=files)
+    body = r.json()
+    assert body["inserted"] == 0
+    assert body["errors"][0]["reason"] == "duplicate_email_in_db"
+
+
 async def test_excel_export(authed_client):
     await authed_client.post("/api/users", json={"name": "Exp", "phone": "1212121212"})
     r = await authed_client.get("/api/users/download")

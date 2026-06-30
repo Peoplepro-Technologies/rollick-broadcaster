@@ -216,6 +216,8 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
 
     inserted = updated = skipped = 0
     errors: list[dict] = []
+    seen_phones: set[str] = set()
+    seen_emails: set[str] = set()
 
     with get_db() as conn:
         for idx, row in enumerate(data_rows, start=2 if has_header else 1):
@@ -240,6 +242,29 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                 errors.append(_err(idx, "invalid_phone_format", "phone", d["phone"]))
                 skipped += 1
                 continue
+            # Tier B: in-file duplicate phone (case-insensitive on raw, exact on normalized).
+            if norm_phone in seen_phones:
+                errors.append(_err(idx, "duplicate_phone_in_file", "phone", norm_phone))
+                skipped += 1
+                continue
+            seen_phones.add(norm_phone)
+
+            # Tier B: email checks (in-file dup + db conflict). Case-insensitive.
+            email_norm = d["email"].lower() if d["email"] else ""
+            if email_norm:
+                if email_norm in seen_emails:
+                    errors.append(_err(idx, "duplicate_email_in_file", "email", d["email"]))
+                    skipped += 1
+                    continue
+                db_email_owner = conn.execute(
+                    "SELECT id FROM users WHERE lower(email) = ?", (email_norm,)
+                ).fetchone()
+                if db_email_owner:
+                    errors.append(_err(idx, "duplicate_email_in_db", "email", d["email"]))
+                    skipped += 1
+                    continue
+                seen_emails.add(email_norm)
+
             if d["email"] and not EMAIL_RE.match(d["email"]):
                 errors.append(_err(idx, "invalid_email_format", "email", d["email"]))
                 skipped += 1
