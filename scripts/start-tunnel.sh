@@ -63,9 +63,15 @@ docker compose --profile tunnel up -d cloudflared
 echo "▶ Waiting for *.trycloudflare.com URL in cloudflared logs..."
 URL=""
 for i in $(seq 1 60); do
+  # `docker compose logs` is cumulative across restarts, so multiple
+  # trycloudflare URLs may be in the log (one per past run). Use
+  # `tail -1` to pick the MOST RECENT one — `head -1` would pick the
+  # oldest, which is a dead subdomain by definition (cloudflared
+  # rotated past it). Discovered this in production on 2026-06-30
+  # when KV was holding an old URL while cloudflared was on a new one.
   URL=$(docker compose logs cloudflared 2>&1 \
     | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-    | head -1 || true)
+    | tail -1 || true)
   [ -n "$URL" ] && break
   sleep 1
 done
