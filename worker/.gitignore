@@ -1,0 +1,9 @@
+# Wrangler / Cloudflare Worker local dev artifacts
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# OS
+.DS_Store
+Thumbs.db

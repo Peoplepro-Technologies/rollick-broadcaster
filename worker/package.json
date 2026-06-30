@@ -1,0 +1,14 @@
+{
+  "name": "rollick-broadcaster-redirect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker that 307-redirects broadcast links to the live Cloudflare Quick-Tunnel backend URL stored in KV.",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

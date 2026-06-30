@@ -1,0 +1,10 @@
+name = "rollick-broadcaster-redirect"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# KV namespace binding — created with:
+#   wrangler kv:namespace create BACKEND_URLS
+# Copy the printed `id = "..."` into the line below before `wrangler deploy`.
+[[kv_namespaces]]
+binding = "BACKEND_URLS"
+id = "REPLACE_AFTER_wrangler_kv_namespace_create"
