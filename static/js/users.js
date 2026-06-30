@@ -57,6 +57,96 @@ async function deleteUser(id, name) {
   else alert('Delete failed: ' + r.status);
 }
 
+// ── Excel import: error modal + auto-reload ─────────────────────────────
+
+// Single source of truth — keep in sync with
+// broadcaster/services/users.py::ERROR_HUMAN.
+const ERROR_HUMAN = {
+  name_or_phone_missing:     'Name and phone are required.',
+  invalid_phone_format:      'Phone must be 10 digits (Indian mobile).',
+  invalid_email_format:      'Email format is invalid.',
+  duplicate_phone_in_file:   'Duplicate phone in uploaded file.',
+  duplicate_email_in_file:   'Duplicate email in uploaded file.',
+  duplicate_email_in_db:     'Email already exists for another user.',
+  phone_taken:               'Phone already exists; skipped (upsert off).',
+  db_error:                  'Database error while saving row.',
+};
+function humanizeReason(reason) {
+  if (typeof reason !== 'string') return 'Unknown reason';
+  // db_error carries the message as suffix — strip for humanize().
+  const key = reason.startsWith('db_error') ? 'db_error' : reason;
+  return ERROR_HUMAN[key] || reason;
+}
+
+let _importErrorsBody = null;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+function openImportErrorsModal(body) {
+  _importErrorsBody = body;
+  const rows = body.errors || [];
+  const imported = (body.inserted || 0) + (body.updated || 0);
+  document.getElementById('import-errors-summary').textContent =
+    `${rows.length} row${rows.length === 1 ? '' : 's'} skipped, ${imported} row${imported === 1 ? '' : 's'} imported. Click Close to refresh the user list.`;
+  const tbody = document.getElementById('import-errors-tbody');
+  tbody.innerHTML = '';
+  for (const e of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td>${escapeHtml(e.row ?? '')}</td>` +
+      `<td>${escapeHtml(e.field ?? '')}</td>` +
+      `<td>${escapeHtml(e.value ?? '')}</td>` +
+      `<td>${escapeHtml(humanizeReason(e.reason))}</td>`;
+    tbody.appendChild(tr);
+  }
+  document.getElementById('import-errors-modal').hidden = false;
+}
+
+function closeImportErrorsModal(reload) {
+  document.getElementById('import-errors-modal').hidden = true;
+  if (reload) location.reload();
+}
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') {
+    const m = document.getElementById('import-errors-modal');
+    if (m && !m.hidden) closeImportErrorsModal(false);
+  }
+});
+
+document.getElementById('import-errors-download').addEventListener('click', async () => {
+  if (!_importErrorsBody || !_importErrorsBody.errors || !_importErrorsBody.errors.length) return;
+  try {
+    const r = await fetch('/api/users/upload-excel/errors.csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ errors: _importErrorsBody.errors }),
+    });
+    if (!r.ok) {
+      alert('Download failed: ' + r.status);
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // Use the server-provided filename from Content-Disposition if possible.
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="([^"]+)"/);
+    a.download = m ? m[1] : 'users_import_errors.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Network error: ' + e.message);
+  }
+});
+
 // Excel upload — wires the hidden <input type="file">.
 document.getElementById('xlsx-input').addEventListener('change', async (ev) => {
   const file = ev.target.files[0];
@@ -65,13 +155,13 @@ document.getElementById('xlsx-input').addEventListener('change', async (ev) => {
   fd.append('file', file);
   const result = document.getElementById('import-result');
   const msg = document.getElementById('import-result-msg');
-  const reloadBtn = document.getElementById('import-result-reload');
+  const viewBtn = document.getElementById('import-result-view-errors');
 
   // Reset banner to "loading" state.
   result.classList.remove('form-error');
   result.classList.add('form-success');
   msg.textContent = `Uploading ${file.name}…`;
-  reloadBtn.hidden = true;
+  viewBtn.hidden = true;
   result.hidden = false;
   try {
     const r = await fetch('/api/users/upload-excel?upsert=true', { method: 'POST', body: fd });
@@ -83,18 +173,28 @@ document.getElementById('xlsx-input').addEventListener('change', async (ev) => {
         `!${body.skipped} skipped`,
       ];
       let txt = `✓ Import complete — ${parts.join(', ')}.`;
-      if (body.errors && body.errors.length) {
-        txt += ` ${body.errors.length} row${body.errors.length === 1 ? '' : 's'} skipped: `;
-        txt += body.errors.slice(0, 3).map(e => `row ${e.row} (${e.reason})`).join('; ');
-        if (body.errors.length > 3) txt += `, +${body.errors.length - 3} more`;
+      if (body.skipped > 0) {
+        txt += ` ${body.skipped} row${body.skipped === 1 ? '' : 's'} had errors.`;
       }
       msg.textContent = txt;
-      // Only offer reload if the table actually changed.
-      if (body.inserted > 0 || body.updated > 0) {
-        reloadBtn.hidden = false;
+      // Show "View errors" only when there are skipped rows.
+      if (body.skipped > 0) {
+        viewBtn.hidden = false;
+        viewBtn.onclick = () => openImportErrorsModal(body);
+      } else {
+        viewBtn.hidden = true;
+      }
+      // Auto-reload strategy:
+      //   inserted+updated > 0, skipped == 0  -> reload immediately (clean import)
+      //   inserted+updated > 0, skipped  > 0  -> open modal; Close button reloads
+      //   inserted+updated == 0, skipped > 0 -> open modal; no reload (nothing to refresh)
+      const changed = (body.inserted || 0) + (body.updated || 0);
+      if (changed > 0 && body.skipped === 0) {
+        location.reload();
+      } else if (body.skipped > 0) {
+        openImportErrorsModal(body);
       }
     } else {
-      // Real error: red banner, no reload button.
       result.classList.remove('form-success');
       result.classList.add('form-error');
       msg.textContent = '✗ Import failed: ' + (body.detail || r.status);
