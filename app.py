@@ -5,6 +5,7 @@ Wires middleware, static files, templates, and routers.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -95,7 +96,22 @@ def _status_pill_class(status: str) -> str:
     }.get(status, "muted")
 
 
+def _to_ist(s: str | None) -> str:
+    """Convert a UTC ISO datetime string to IST (UTC+5:30) as 'YYYY-MM-DD HH:MM'.
+
+    Pass-through on None / parse error so callers can use `value | to_ist` safely.
+    """
+    if not s:
+        return ""
+    try:
+        dt = datetime.fromisoformat(s[:19])
+        return (dt + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return s
+
+
 templates.env.globals["_status_pill_class"] = _status_pill_class
+templates.env.filters["to_ist"] = _to_ist
 
 app.include_router(admin_auth.router)
 app.include_router(admin_users.router)

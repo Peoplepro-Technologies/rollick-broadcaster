@@ -199,13 +199,13 @@ def rebuild_auto_groups() -> dict:
         for d in depts:
             conn.execute(
                 "INSERT INTO groups (name, type, criteria, is_auto, created_at) VALUES (?, ?, NULL, 1, ?)",
-                (f"Dept: {d}", "department", now),
+                (d, "department", now),
             )
             n += 1
         for l in locs:
             conn.execute(
                 "INSERT INTO groups (name, type, criteria, is_auto, created_at) VALUES (?, ?, NULL, 1, ?)",
-                (f"Loc: {l}", "location", now),
+                (l, "location", now),
             )
             n += 1
         for p in pairs:
@@ -218,18 +218,20 @@ def rebuild_auto_groups() -> dict:
 
 
 def _auto_criteria_to_where(type_: str, name: str) -> tuple[Optional[str], list]:
-    """Map an auto group's (type, name) to a SQL WHERE fragment against `users`."""
+    """Map an auto group's (type, name) to a SQL WHERE fragment against `users`.
+
+    For department/location auto groups, `name` is the raw department/location
+    value (no prefix). For combo groups, name is "<dept> / <loc>".
+    """
     if type_ == "department":
-        # name format: "Dept: <name>"
-        if not name.startswith("Dept: "):
+        if not name:
             return None, []
-        return "department = ?", [name[len("Dept: "):]]
+        return "department = ?", [name]
     if type_ == "location":
-        if not name.startswith("Loc: "):
+        if not name:
             return None, []
-        return "location = ?", [name[len("Loc: "):]]
+        return "location = ?", [name]
     if type_ == "combo":
-        # name format: "<dept> / <loc>"
         if " / " not in name:
             return None, []
         dept, loc = name.split(" / ", 1)

@@ -41,11 +41,6 @@
       <span class="dash-kpi-value">{{ "{:,}".format(k.comments_week) }}</span>
       <span class="dash-kpi-sub">visible</span>
     </a>
-    <a class="dash-kpi-tile {% if k.pending_mod %}dash-kpi-warn{% endif %}" href="/admin/comments">
-      <span class="dash-kpi-label">To moderate</span>
-      <span class="dash-kpi-value">{{ "{:,}".format(k.pending_mod) }}</span>
-      <span class="dash-kpi-sub">{% if k.pending_mod %}oldest first{% else %}all clear{% endif %}</span>
-    </a>
   </div>
 
   {# ── Chart + Recent broadcasts ──────────────────────────── #}
@@ -62,28 +57,29 @@
         <a class="muted small" href="/admin/broadcasts">View all →</a>
       </div>
       <table class="data-table compact">
-        <thead><tr><th>Title</th><th>Status</th><th>Views</th></tr></thead>
+        <thead><tr><th>Title</th><th>Status</th><th>Sent</th><th>Views</th></tr></thead>
         <tbody>
         {% for b in overview.recent_broadcasts %}
           <tr>
             <td><a href="/admin/broadcasts/{{ b.id }}">{{ b.title }}</a>
               <div class="muted small">{{ b.category or '—' }}</div></td>
             <td><span class="pill {{ _status_pill_class(b.status) }}">{{ b.status }}</span></td>
+            <td class="muted small">{{ (b.sent_at or b.created_at) | to_ist }}</td>
             <td>{{ b.view_count }} / {{ b.link_count }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="3" class="muted">No broadcasts yet.</td></tr>
+          <tr><td colspan="4" class="muted">No broadcasts yet.</td></tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 
-  {# ── Pending comments + Quick links ─────────────────────── #}
+  {# ── Comments received + Quick links ─────────────────────── #}
   <div class="dash-row">
     <div class="card">
       <div class="card-head">
-        <h2>Pending comments</h2>
+        <h2>Comments received</h2>
         <a class="muted small" href="/admin/comments">Open queue →</a>
       </div>
       <ul class="pending-list">

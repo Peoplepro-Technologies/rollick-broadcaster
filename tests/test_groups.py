@@ -93,10 +93,10 @@ async def test_auto_group_member_count(authed_client):
     await authed_client.post("/api/groups/rebuild-auto")
     groups = (await authed_client.get("/api/groups")).json()
     by_name = {g["name"]: g for g in groups}
-    assert by_name["Dept: Eng"]["member_count"] == 3
-    assert by_name["Dept: Sales"]["member_count"] == 1
-    assert by_name["Loc: BLR"]["member_count"] == 3
-    assert by_name["Loc: MUM"]["member_count"] == 1
+    assert by_name["Eng"]["member_count"] == 3
+    assert by_name["Sales"]["member_count"] == 1
+    assert by_name["BLR"]["member_count"] == 3
+    assert by_name["MUM"]["member_count"] == 1
     assert by_name["Eng / BLR"]["member_count"] == 2
     assert by_name["Eng / MUM"]["member_count"] == 1
     assert by_name["Sales / BLR"]["member_count"] == 1
@@ -173,7 +173,7 @@ async def test_resolve_recipients_mixes_groups_and_users(authed_client):
     ])
     await authed_client.post("/api/groups/rebuild-auto")
     groups = (await authed_client.get("/api/groups")).json()
-    eng = next(g for g in groups if g["name"] == "Dept: Eng")
+    eng = next(g for g in groups if g["name"] == "Eng")
     # Mix: add explicit user `c` (Sales) + the Eng group (which has a, b)
     ids = groups_svc = None  # type: ignore
     from broadcaster.services import groups as gsvc
@@ -185,7 +185,7 @@ async def test_resolve_recipients_dedupes(authed_client):
     a, b = await _make_users(authed_client, ("A", "9100000001", "Eng", "BLR"), ("B", "9100000002", "Eng", ""))
     await authed_client.post("/api/groups/rebuild-auto")
     groups = (await authed_client.get("/api/groups")).json()
-    eng = next(g for g in groups if g["name"] == "Dept: Eng")
+    eng = next(g for g in groups if g["name"] == "Eng")
     from broadcaster.services import groups as gsvc
     # `a` is in Eng group; pass both [a] and the group → still just {a, b}
     result = gsvc.resolve_recipients(group_ids=[eng["id"]], user_ids=[a])

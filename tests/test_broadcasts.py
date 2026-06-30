@@ -94,7 +94,7 @@ async def test_create_broadcast_with_group(authed_client):
                                    ("B", "2000000002", "Eng", "MUM"))
     await authed_client.post("/api/groups/rebuild-auto")
     groups = (await authed_client.get("/api/groups")).json()
-    eng = next(g for g in groups if g["name"] == "Dept: Eng")
+    eng = next(g for g in groups if g["name"] == "Eng")
 
     r = await authed_client.post("/api/broadcasts", json={
         "title": "Eng update", "group_ids": [eng["id"]],
@@ -156,7 +156,7 @@ async def test_create_broadcast_mixes_groups_and_users_deduped(authed_client):
                                  ("C", "3000000003", "Eng", "MUM"))
     await authed_client.post("/api/groups/rebuild-auto")
     groups = (await authed_client.get("/api/groups")).json()
-    eng = next(g for g in groups if g["name"] == "Dept: Eng")
+    eng = next(g for g in groups if g["name"] == "Eng")
 
     r = await authed_client.post("/api/broadcasts", json={
         "title": "Mix", "group_ids": [eng["id"]], "user_ids": [b, c],

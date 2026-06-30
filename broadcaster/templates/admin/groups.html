@@ -61,9 +61,16 @@
   <div class="modal-card">
     <h3>Add Manual Group</h3>
     <form id="add-group-form" onsubmit="submitAddGroup(event)">
-      <label>Name *<input name="name" required></label>
+      <label>Name *<input name="name" required autofocus></label>
       <label>Type<input name="type" value="manual"></label>
-      <label>Criteria (JSON, optional)<input name="criteria" placeholder='{"user_ids":[1,2,3]}'></label>
+      <label>User IDs (comma-separated, optional)
+        <input name="user_ids" placeholder="e.g. 1, 2, 3">
+        <small class="hint">Members added after the group is saved. Leave blank to add later.</small>
+      </label>
+      <details class="format-help">
+        <summary>Advanced — Criteria (JSON, optional)</summary>
+        <textarea name="criteria" rows="3" placeholder='{"note": "freeform metadata — not used for membership"}'></textarea>
+      </details>
       <div id="add-group-error" class="form-error" hidden></div>
       <div class="modal-actions">
         <button type="button" class="btn secondary" onclick="closeAddGroup()">Cancel</button>
@@ -83,19 +90,43 @@ function openAddGroup() {
 }
 function closeAddGroup() { document.getElementById('add-group-modal').hidden = true; }
 
+function parseUserIds(raw) {
+  return (raw || '')
+    .split(/[\s,]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => parseInt(s, 10))
+    .filter(n => Number.isInteger(n) && n > 0);
+}
+
 async function submitAddGroup(ev) {
   ev.preventDefault();
   const fd = new FormData(ev.target);
   const payload = { name: fd.get('name'), type: fd.get('type') || 'manual' };
-  const c = fd.get('criteria'); if (c) payload.criteria = c;
+  const c = (fd.get('criteria') || '').trim();
+  if (c) payload.criteria = c;
+  const uids = parseUserIds(fd.get('user_ids'));
   const err = document.getElementById('add-group-error');
   err.hidden = true;
   const r = await fetch('/api/groups', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(payload),
   });
-  if (r.ok) location.reload();
-  else { const b = await r.json().catch(()=>({})); err.textContent = b.detail || r.status; err.hidden = false; }
+  if (!r.ok) { const b = await r.json().catch(()=>({})); err.textContent = b.detail || r.status; err.hidden = false; return; }
+  const group = await r.json();
+  if (uids.length) {
+    const m = await fetch(`/api/groups/${group.id}/members`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ user_ids: uids }),
+    });
+    if (!m.ok) {
+      const b = await m.json().catch(()=>({}));
+      err.textContent = `Group saved, but adding members failed: ${b.detail || m.status}`;
+      err.hidden = false;
+      return;
+    }
+  }
+  location.reload();
 }
 
 async function deleteGroup(id, name) {
