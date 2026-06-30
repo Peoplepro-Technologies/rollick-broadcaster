@@ -188,10 +188,15 @@ def _row_to_dict(row: Iterable) -> dict:
     }
 
 
+def _err(row: int, reason: str, field: str | None, value) -> dict:
+    """Single error-dict shape returned to the front-end modal."""
+    return {"row": row, "reason": reason, "field": field, "value": value}
+
+
 def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
     """Read first sheet. Validate each row. Upsert by phone (default).
 
-    Returns {inserted, updated, skipped, errors: [{row, reason}]}
+    Returns {inserted, updated, skipped, errors: [{row, reason, field, value}]}
     """
     try:
         content = file.file.read()
@@ -215,18 +220,28 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
     with get_db() as conn:
         for idx, row in enumerate(data_rows, start=2 if has_header else 1):
             d = _row_to_dict(row)
-            if not d["name"] or not d["phone"]:
-                errors.append({"row": idx, "reason": "name_or_phone_missing"})
+            if not d["name"] and not d["phone"]:
+                # Both missing — emit one combined error (UX: short-circuit
+                # rather than produce two separate rows from one source row).
+                errors.append(_err(idx, "name_or_phone_missing", None, None))
+                skipped += 1
+                continue
+            if not d["name"]:
+                errors.append(_err(idx, "name_or_phone_missing", "name", ""))
+                skipped += 1
+                continue
+            if not d["phone"]:
+                errors.append(_err(idx, "name_or_phone_missing", "phone", ""))
                 skipped += 1
                 continue
             # Normalize phone — accept +91, spaces, dashes, parens, leading 0.
             norm_phone = _normalize_phone(d["phone"])
             if not norm_phone:
-                errors.append({"row": idx, "reason": "invalid_phone"})
+                errors.append(_err(idx, "invalid_phone_format", "phone", d["phone"]))
                 skipped += 1
                 continue
             if d["email"] and not EMAIL_RE.match(d["email"]):
-                errors.append({"row": idx, "reason": "invalid_email"})
+                errors.append(_err(idx, "invalid_email_format", "email", d["email"]))
                 skipped += 1
                 continue
 
@@ -245,7 +260,7 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                     )
                     updated += 1
                 elif existing and not upsert:
-                    errors.append({"row": idx, "reason": "phone_taken"})
+                    errors.append(_err(idx, "phone_taken", "phone", norm_phone))
                     skipped += 1
                 else:
                     conn.execute(
@@ -257,7 +272,10 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                     )
                     inserted += 1
             except Exception as e:
-                errors.append({"row": idx, "reason": f"db_error: {e}"})
+                msg = str(e)
+                if len(msg) > 80:
+                    msg = msg[:80]
+                errors.append(_err(idx, f"db_error: {e}", None, msg))
                 skipped += 1
 
     return {"inserted": inserted, "updated": updated, "skipped": skipped, "errors": errors}

@@ -261,9 +261,14 @@ async def test_excel_import_reports_invalid_rows(authed_client):
     assert body["inserted"] == 0
     assert body["skipped"] == 3
     reasons = {e["reason"] for e in body["errors"]}
+    fields = {(e["row"], e["field"]) for e in body["errors"]}
     assert "name_or_phone_missing" in reasons
-    assert "invalid_phone" in reasons
-    assert "invalid_email" in reasons
+    assert "invalid_phone_format" in reasons
+    assert "invalid_email_format" in reasons
+    # Each error dict must carry field + value
+    for e in body["errors"]:
+        assert "field" in e
+        assert "value" in e
 
 
 async def test_excel_export(authed_client):
