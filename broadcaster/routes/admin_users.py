@@ -68,9 +68,8 @@ def template():
 @router.post("/upload-excel")
 async def upload_excel(
     file: UploadFile = File(...),
-    upsert: bool = Query(default=True),
 ):
-    return users_svc.import_from_xlsx(file, upsert=upsert)
+    return users_svc.import_from_xlsx(file)
 
 
 @router.post("/upload-excel/errors.csv")

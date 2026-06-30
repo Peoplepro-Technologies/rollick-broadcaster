@@ -199,10 +199,21 @@ def _err(row: int, reason: str, field: str | None, value) -> dict:
     return {"row": row, "reason": reason, "field": field, "value": value}
 
 
-def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
-    """Read first sheet. Validate each row. Upsert by phone (default).
+def import_from_xlsx(file: UploadFile) -> dict:
+    """Read first sheet. Validate each row.
 
-    Returns {inserted, updated, skipped, errors: [{row, reason, field, value}]}
+    Behavior (per 2026-06-30 user direction):
+      - Upsert by phone (insert if new, update if exists).
+      - Destructive replace: in one transaction, DELETE every non-admin user
+        whose phone is NOT in this file OR whose email would collide with a
+        file email — so the file is fully authoritative for the user list.
+      - Admin (lowest-id user) is always preserved AND file rows matching
+        admin's phone are skipped (admin's row is never overwritten).
+      - Net effect: every excel upload OVERWRITES the user list with the
+        file's contents, with admin protection.
+
+    Returns {inserted, updated, skipped, deleted, errors: [{row, reason, field, value}],
+             dept_location_changed, groups_created}
     """
     try:
         content = file.file.read()
@@ -213,7 +224,7 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
-        return {"inserted": 0, "updated": 0, "skipped": 0, "errors": []}
+        return {"inserted": 0, "updated": 0, "skipped": 0, "deleted": 0, "errors": []}
 
     # Detect header row: if first row matches known header names, skip it.
     first = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
@@ -222,13 +233,60 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
 
     inserted = updated = skipped = 0
     errors: list[dict] = []
+    file_phones: set[str] = set()      # phones of valid rows; used in delete pass
+    file_emails: set[str] = set()      # emails of valid rows; used in delete pass
+    valid_rows: list[tuple] = []       # (idx, d, norm_phone, email_norm)
     seen_phones: set[str] = set()
     seen_emails: set[str] = set()
+
+    # ── First pass: validate every row, collect valid rows + sets ──
+    for idx, row in enumerate(data_rows, start=2 if has_header else 1):
+        d = _row_to_dict(row)
+        if not d["name"] and not d["phone"]:
+            errors.append(_err(idx, "name_or_phone_missing", None, None))
+            skipped += 1
+            continue
+        if not d["name"]:
+            errors.append(_err(idx, "name_or_phone_missing", "name", ""))
+            skipped += 1
+            continue
+        if not d["phone"]:
+            errors.append(_err(idx, "name_or_phone_missing", "phone", ""))
+            skipped += 1
+            continue
+        norm_phone = _normalize_phone(d["phone"])
+        if not norm_phone:
+            errors.append(_err(idx, "invalid_phone_format", "phone", d["phone"]))
+            skipped += 1
+            continue
+        if norm_phone in seen_phones:
+            errors.append(_err(idx, "duplicate_phone_in_file", "phone", norm_phone))
+            skipped += 1
+            continue
+        seen_phones.add(norm_phone)
+        file_phones.add(norm_phone)
+
+        email_norm = d["email"].lower() if d["email"] else ""
+        if email_norm:
+            if email_norm in seen_emails:
+                errors.append(_err(idx, "duplicate_email_in_file", "email", d["email"]))
+                skipped += 1
+                continue
+            seen_emails.add(email_norm)
+            file_emails.add(email_norm)
+            if not EMAIL_RE.match(d["email"]):
+                errors.append(_err(idx, "invalid_email_format", "email", d["email"]))
+                skipped += 1
+                continue
+
+        valid_rows.append((idx, d, norm_phone, email_norm))
+
+    # ── Second pass: delete conflicts + upsert (one transaction) ──
     dept_loc_changed = False
+    deleted = 0
 
     with get_db() as conn:
         # Snapshot of current dept/location values BEFORE the import runs.
-        # Used to detect "new" values introduced by this upload.
         existing_depts = {
             _norm_dept_loc(r["department"])
             for r in conn.execute(
@@ -243,53 +301,41 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                 "WHERE location IS NOT NULL AND location != ''"
             ).fetchall()
         }
-        for idx, row in enumerate(data_rows, start=2 if has_header else 1):
-            d = _row_to_dict(row)
-            if not d["name"] and not d["phone"]:
-                # Both missing — emit one combined error (UX: short-circuit
-                # rather than produce two separate rows from one source row).
-                errors.append(_err(idx, "name_or_phone_missing", None, None))
-                skipped += 1
-                continue
-            if not d["name"]:
-                errors.append(_err(idx, "name_or_phone_missing", "name", ""))
-                skipped += 1
-                continue
-            if not d["phone"]:
-                errors.append(_err(idx, "name_or_phone_missing", "phone", ""))
-                skipped += 1
-                continue
-            # Normalize phone — accept +91, spaces, dashes, parens, leading 0.
-            norm_phone = _normalize_phone(d["phone"])
-            if not norm_phone:
-                errors.append(_err(idx, "invalid_phone_format", "phone", d["phone"]))
-                skipped += 1
-                continue
-            # Tier B: in-file duplicate phone (case-insensitive on raw, exact on normalized).
-            if norm_phone in seen_phones:
-                errors.append(_err(idx, "duplicate_phone_in_file", "phone", norm_phone))
-                skipped += 1
-                continue
-            seen_phones.add(norm_phone)
 
-            # Tier B: email checks (in-file dup + db conflict). Case-insensitive.
-            email_norm = d["email"].lower() if d["email"] else ""
-            if email_norm:
-                if email_norm in seen_emails:
-                    errors.append(_err(idx, "duplicate_email_in_file", "email", d["email"]))
-                    skipped += 1
-                    continue
-                db_email_owner = conn.execute(
-                    "SELECT id FROM users WHERE lower(email) = ?", (email_norm,)
-                ).fetchone()
-                if db_email_owner:
-                    errors.append(_err(idx, "duplicate_email_in_db", "email", d["email"]))
-                    skipped += 1
-                    continue
-                seen_emails.add(email_norm)
+        # Locate admin (lowest-id user). If no users exist, no protection.
+        admin_row = conn.execute(
+            "SELECT id, phone FROM users ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        admin_id = admin_row["id"] if admin_row else None
+        admin_phone = admin_row["phone"] if admin_row else None
 
-            if d["email"] and not EMAIL_RE.match(d["email"]):
-                errors.append(_err(idx, "invalid_email_format", "email", d["email"]))
+        # Destructive replace pre-pass: delete non-admin rows whose
+        # phone is NOT in the file OR whose email collides with a file
+        # email. This is what makes the file authoritative.
+        conditions = []
+        params: list = []
+        if file_phones:
+            conditions.append("phone NOT IN (" + ",".join("?" * len(file_phones)) + ")")
+            params.extend(file_phones)
+        if file_emails:
+            conditions.append("lower(email) IN (" + ",".join("?" * len(file_emails)) + ")")
+            params.extend(file_emails)
+        if conditions:
+            where_clause = " AND ".join(f"({c})" for c in conditions)
+            if admin_id is not None:
+                sql = f"DELETE FROM users WHERE id != ? AND {where_clause}"
+                cur = conn.execute(sql, [admin_id] + params)
+            else:
+                sql = f"DELETE FROM users WHERE {where_clause}"
+                cur = conn.execute(sql, params)
+            deleted = cur.rowcount
+
+        # Upsert the surviving valid rows.
+        for idx, d, norm_phone, email_norm in valid_rows:
+            # Admin's phone is untouchable. The file's row matching admin's
+            # phone is reported and skipped so the admin row in DB is intact.
+            if admin_phone is not None and norm_phone == admin_phone:
+                errors.append(_err(idx, "admin_protected", "phone", norm_phone))
                 skipped += 1
                 continue
 
@@ -298,8 +344,7 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
             ).fetchone()
 
             try:
-                if existing and upsert:
-                    # Detect dept/location change for the rebuild trigger.
+                if existing:
                     new_dept = _norm_dept_loc(d["department"])
                     new_loc  = _norm_dept_loc(d["location"])
                     old_dept = _norm_dept_loc(existing["department"])
@@ -314,11 +359,7 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                          existing["id"]),
                     )
                     updated += 1
-                elif existing and not upsert:
-                    errors.append(_err(idx, "phone_taken", "phone", norm_phone))
-                    skipped += 1
                 else:
-                    # Detect a NEW dept/location value (not previously in DB).
                     new_dept = _norm_dept_loc(d["department"])
                     new_loc  = _norm_dept_loc(d["location"])
                     if new_dept and new_dept not in existing_depts:
@@ -353,6 +394,7 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
+        "deleted": deleted,
         "errors": errors,
         "dept_location_changed": dept_loc_changed,
         "groups_created": groups_created,
@@ -368,6 +410,7 @@ ERROR_HUMAN = {
     "duplicate_phone_in_file":    "Duplicate phone in uploaded file.",
     "duplicate_email_in_file":    "Duplicate email in uploaded file.",
     "duplicate_email_in_db":      "Email already exists for another user.",
+    "admin_protected":            "Row matches the admin's phone and was skipped (admin protected).",
     "phone_taken":                "Phone already exists; skipped (upsert off).",
     "db_error":                   "Database error while saving row.",
 }

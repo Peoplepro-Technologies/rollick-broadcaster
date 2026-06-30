@@ -68,6 +68,7 @@ const ERROR_HUMAN = {
   duplicate_phone_in_file:   'Duplicate phone in uploaded file.',
   duplicate_email_in_file:   'Duplicate email in uploaded file.',
   duplicate_email_in_db:     'Email already exists for another user.',
+  admin_protected:           "Row matches the admin's phone and was skipped (admin protected).",
   phone_taken:               'Phone already exists; skipped (upsert off).',
   db_error:                  'Database error while saving row.',
 };
@@ -148,9 +149,23 @@ document.getElementById('import-errors-download').addEventListener('click', asyn
 });
 
 // Excel upload — wires the hidden <input type="file">.
+// EVERY upload overwrites the user list (admin preserved). Confirm
+// before submit so the destructive action isn't silent.
 document.getElementById('xlsx-input').addEventListener('change', async (ev) => {
   const file = ev.target.files[0];
   if (!file) return;
+  // Destructive-replace confirm. Counts known to user via header subtitle.
+  const ok = window.confirm(
+    'Replace the user list with this file?\n\n' +
+    'Existing users whose phone is NOT in the file will be deleted.\n' +
+    'The admin account is always preserved.\n\n' +
+    'Continue?'
+  );
+  if (!ok) {
+    ev.target.value = '';   // clear so re-selecting same file fires change
+    return;
+  }
+
   const fd = new FormData();
   fd.append('file', file);
   const result = document.getElementById('import-result');
@@ -164,15 +179,19 @@ document.getElementById('xlsx-input').addEventListener('change', async (ev) => {
   viewBtn.hidden = true;
   result.hidden = false;
   try {
-    const r = await fetch('/api/users/upload-excel?upsert=true', { method: 'POST', body: fd });
+    const r = await fetch('/api/users/upload-excel', { method: 'POST', body: fd });
     const body = await r.json().catch(() => ({}));
     if (r.ok) {
       const parts = [
         `+${body.inserted} added`,
         `~${body.updated} updated`,
         `!${body.skipped} skipped`,
+        `−${body.deleted || 0} removed`,
       ];
       let txt = `✓ Import complete — ${parts.join(', ')}.`;
+      if ((body.deleted || 0) > 0) {
+        txt += ` ${body.deleted} user${body.deleted === 1 ? '' : 's'} not in the file were deleted (admin preserved).`;
+      }
       if (body.skipped > 0) {
         txt += ` ${body.skipped} row${body.skipped === 1 ? '' : 's'} had errors.`;
       }
@@ -188,11 +207,13 @@ document.getElementById('xlsx-input').addEventListener('change', async (ev) => {
       //   inserted+updated > 0, skipped == 0  -> reload immediately (clean import)
       //   inserted+updated > 0, skipped  > 0  -> open modal; Close button reloads
       //   inserted+updated == 0, skipped > 0 -> open modal; no reload (nothing to refresh)
+      //   deleted > 0 alone -> reload so the user sees the new list
       const changed = (body.inserted || 0) + (body.updated || 0);
-      if (changed > 0 && body.skipped === 0) {
-        location.reload();
-      } else if (body.skipped > 0) {
+      const lost    = body.deleted || 0;
+      if (body.skipped > 0) {
         openImportErrorsModal(body);
+      } else if (changed > 0 || lost > 0) {
+        location.reload();
       }
     } else {
       result.classList.remove('form-success');

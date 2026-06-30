@@ -451,6 +451,134 @@ async def test_excel_errors_csv_endpoint_unauth(client):
     assert r.status_code == 401
 
 
+# ── Replace mode (always-on) ──────────────────────────────────
+
+async def test_excel_import_replace_deletes_users_not_in_file(authed_client):
+    """Users whose phone is NOT in the new file get deleted; admin is preserved."""
+    # Seed three users (admin is auto-created with id=1; assume its phone is some
+    # 10-digit number we don't know). Use the admin's row separately by id.
+    await authed_client.post("/api/users", json={"name": "Keep1", "phone": "3000000001"})
+    await authed_client.post("/api/users", json={"name": "Keep2", "phone": "3000000002"})
+    await authed_client.post("/api/users", json={"name": "DropMe", "phone": "3000000099"})
+
+    # Look up admin id so we can verify it's NOT in the new file but still survives.
+    rs = await authed_client.get("/api/users")
+    admin_id = next(u["id"] for u in rs.json() if u["name"] == "admin" or u["id"] == 1)
+    # (conftest bootstrap_admin creates a user named "admin" with id=1.)
+
+    # Upload a file that re-creates Keep1 + Keep2 but not DropMe, and also
+    # adds a new user Keep3.
+    blob = _xlsx_bytes([
+        ["name", "phone", "department", "location"],
+        ["Keep1", "3000000001", "Eng", "BLR"],
+        ["Keep2", "3000000002", "Sales", "MUM"],
+        ["Keep3", "3000000003", "Ops",   "DEL"],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await authed_client.post("/api/users/upload-excel", files=files)
+    body = r.json()
+    assert body["inserted"] == 1   # Keep3
+    assert body["updated"] == 2    # Keep1, Keep2 (dept/loc)
+    assert body["deleted"] == 1    # DropMe
+
+    # Verify final state.
+    rs = await authed_client.get("/api/users")
+    names = {u["name"] for u in rs.json()}
+    assert "DropMe" not in names
+    assert "Keep1" in names and "Keep2" in names and "Keep3" in names
+    # Admin must still be there even though the file doesn't list it.
+    assert any(u["id"] == admin_id for u in rs.json())
+
+
+async def test_excel_import_replace_admin_preserved_when_not_in_file(authed_client):
+    """Admin's row survives a replace even when the admin phone is absent from the file."""
+    rs = await authed_client.get("/api/users")
+    admin_before = next(u for u in rs.json() if u["name"] == "admin" or u["id"] == 1)
+
+    blob = _xlsx_bytes([
+        ["name", "phone", "department"],
+        ["OnlyOne", "4555555555", "Eng"],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    body = (await authed_client.post("/api/users/upload-excel", files=files)).json()
+    assert body["inserted"] == 1
+
+    rs = await authed_client.get("/api/users")
+    names = {u["name"] for u in rs.json()}
+    # Admin still there.
+    assert any(u["id"] == admin_before["id"] for u in rs.json())
+    assert "OnlyOne" in names
+
+
+async def test_excel_import_replace_empty_file_is_noop(authed_client):
+    """Header-only file doesn't delete anyone (no data rows; no deletions)."""
+    await authed_client.post("/api/users", json={"name": "PreExisting", "phone": "5000000001"})
+    rs = await authed_client.get("/api/users")
+    n_before = len(rs.json())
+
+    blob = _xlsx_bytes([["name", "phone"]])  # header only
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    body = (await authed_client.post("/api/users/upload-excel", files=files)).json()
+    assert body["inserted"] == 0 and body["updated"] == 0
+    assert body["deleted"] == 0
+
+    rs = await authed_client.get("/api/users")
+    assert len(rs.json()) == n_before  # no one removed
+
+
+async def test_excel_import_replace_pre_deletes_conflicting_email_user(authed_client):
+    """Destructive replace: file's email takes precedence. The existing user
+    who owns that email (with a DIFFERENT phone) gets deleted, then the new row
+    inserts cleanly. So re-uploading the same file produces no false duplicates.
+    """
+    # Seed a user with email that will appear in the next upload.
+    await authed_client.post(
+        "/api/users", json={"name": "Old Owner", "phone": "7100000001", "email": "shared@x.com"}
+    )
+    blob = _xlsx_bytes([
+        ["name", "phone", "email"],
+        ["New Owner", "7200000002", "shared@x.com"],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    body = (await authed_client.post("/api/users/upload-excel", files=files)).json()
+    assert body["inserted"] == 1
+    assert body["skipped"] == 0  # no duplicate_email_in_db — pre-delete handled it
+    assert body["deleted"] == 1  # Old Owner was deleted (phone not in file)
+
+    rs = await authed_client.get("/api/users")
+    phones = {u["phone"] for u in rs.json()}
+    assert "7100000001" not in phones  # Old Owner gone
+    assert "7200000002" in phones      # New Owner in
+
+
+async def test_excel_import_replace_admin_row_in_file_is_skipped(authed_client):
+    """File row matching admin's phone is reported as admin_protected and skipped."""
+    # Look up the bootstrap admin row created by conftest.
+    rs = await authed_client.get("/api/users")
+    admin = next(u for u in rs.json() if u["name"] == "admin" or u["id"] == 1)
+    admin_phone = admin["phone"]
+    admin_email_before = admin.get("email") or ""
+    admin_name_before = admin["name"]
+
+    blob = _xlsx_bytes([
+        ["name", "phone", "email"],
+        ["Imposter", admin_phone, "evil@x.com"],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    body = (await authed_client.post("/api/users/upload-excel", files=files)).json()
+    # The imposter row was skipped (admin_protected), so no inserts/updates.
+    assert body["inserted"] == 0 and body["updated"] == 0
+    reasons = {e["reason"] for e in body["errors"]}
+    assert "admin_protected" in reasons
+
+    # Admin row is unchanged.
+    rs = await authed_client.get("/api/users")
+    same_admin = next(u for u in rs.json() if u["id"] == admin["id"])
+    assert same_admin["name"] == admin_name_before
+    assert same_admin["email"] == admin_email_before
+    assert same_admin["phone"] == admin_phone
+
+
 async def test_excel_export(authed_client):
     await authed_client.post("/api/users", json={"name": "Exp", "phone": "1212121212"})
     r = await authed_client.get("/api/users/download")
