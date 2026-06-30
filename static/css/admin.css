@@ -125,6 +125,24 @@
 }
 .modal-card input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+/* Modal scroll: long error tables scroll inside the card. */
+.modal-body { max-height: 60vh; overflow: auto; }
+
+/* Import errors modal needs to be wider than the default 440px so the
+ * 4-column table fits comfortably. */
+#import-errors-modal .modal-card { max-width: 760px; }
+#import-errors-modal .modal-card table { width: 100%; border-collapse: collapse; }
+#import-errors-modal .modal-card th,
+#import-errors-modal .modal-card td {
+  text-align: left; padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+#import-errors-modal .modal-card thead th {
+  background: var(--surface-2, #f7f8fa);
+  font-weight: 600; position: sticky; top: 0;
+}
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slide-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 
@@ -351,7 +369,7 @@
    block's `.kpi-grid` / `.kpi` / `.label` / `.num` (line 317-343). */
 .dash-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -397,7 +415,7 @@
 
 .dash-row {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 20px;
   margin-bottom: 20px;
 }
@@ -437,6 +455,10 @@
 }
 
 /* ── Schedule picker ─────────────────────────────────────── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.data-table th, .data-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); }
+.data-table th { color: var(--text-2); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; }
+.data-table tr:last-child td { border-bottom: none; }
 .when-block { border: 1px solid var(--border, #e2e8f0); border-radius: 8px;
               padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .when-block legend { font-weight: 600; padding: 0 8px; }
