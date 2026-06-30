@@ -50,7 +50,7 @@
 
     <div id="import-result" class="form-success" hidden style="margin: 12px 0;">
       <span id="import-result-msg"></span>
-      <button type="button" class="btn small" id="import-result-reload" onclick="location.reload()" hidden style="margin-left: 12px;">Reload to see new users →</button>
+      <button type="button" class="btn small" id="import-result-view-errors" hidden style="margin-left: 12px;">View errors →</button>
     </div>
 
     <div class="table-wrap">
@@ -109,6 +109,26 @@
         <button type="submit" class="btn">Save</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Import errors modal -->
+<div id="import-errors-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeImportErrorsModal(false)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <h3>Import errors</h3>
+    <p id="import-errors-summary" class="sub"></p>
+    <div id="import-errors-table-wrap" class="modal-body">
+      <table class="table">
+        <thead>
+          <tr><th>Row</th><th>Field</th><th>Value</th><th>Reason</th></tr>
+        </thead>
+        <tbody id="import-errors-tbody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn secondary" id="import-errors-download">Download errors CSV</button>
+      <button type="button" class="btn" onclick="closeImportErrorsModal(true)">Close</button>
+    </div>
   </div>
 </div>
 {% endblock %}
