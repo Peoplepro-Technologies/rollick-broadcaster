@@ -285,3 +285,49 @@ async def test_single_date_bound_flashes_and_keeps_table(authed_client):
     assert r.status_code == 200
     assert "both" in r.text.lower()
     assert "SingleDateTest" in r.text  # full table still rendered
+
+
+# Test 13: q filter narrows table and counts to title match
+
+
+async def test_search_q_narrows_table_and_counts(authed_client):
+    a, = await _make_users(authed_client, ("PageU13", "7400000013", "", ""))
+    for title, cat, ch in [("Diwali promo blast", "Promotions", "email"),
+                            ("Holi greetings",       "Promotions", "whatsapp"),
+                            ("Internal update",      "General",    "email")]:
+        await authed_client.post("/api/broadcasts", json={
+            "title": title, "category": cat, "delivery_channel": ch,
+            "user_ids": [a], "mode": "draft",
+        })
+    listed = bc_svc.list_broadcasts(q="diwali")
+    titles = {b["title"] for b in listed}
+    assert titles == {"Diwali promo blast"}
+
+    listed2 = bc_svc.list_broadcasts(q="GREET")  # case-insensitive via LIKE
+    assert {b["title"] for b in listed2} == {"Holi greetings"}
+
+    # Page renders the matching row + the search input retains the value.
+    r = await authed_client.get("/admin/broadcasts?q=diwali")
+    assert r.status_code == 200
+    assert "Diwali promo blast" in r.text
+    assert "Holi greetings" not in r.text
+    assert 'value="diwali"' in r.text  # search input preserved
+
+    # Active-filter chip appears with the search term and an × link.
+    assert 'search: <b>diwali</b>' in r.text
+
+
+# Test 14: q combined with category filter narrows further
+
+
+async def test_search_q_combines_with_category(authed_client):
+    a, = await _make_users(authed_client, ("PageU14", "7400000014", "", ""))
+    for title, cat in [("alpha news", "Promotions"),
+                        ("alpha memo", "General"),
+                        ("beta news",  "Promotions")]:
+        await authed_client.post("/api/broadcasts", json={
+            "title": title, "category": cat, "delivery_channel": "email",
+            "user_ids": [a], "mode": "draft",
+        })
+    listed = bc_svc.list_broadcasts(q="alpha", category="Promotions")
+    assert {b["title"] for b in listed} == {"alpha news"}

@@ -109,10 +109,20 @@
 
     // Per-session cooldown: gate the submit button for 30s after each post.
     let cooldownUntil = 0;
+    let isSubmitting = false;  // overrides tick() so the in-flight request
+                               // never gets its button quietly re-enabled.
     const submitBtn = document.getElementById('comment-submit');
     const note = document.getElementById('cooldown-note');
 
     function tick() {
+      if (isSubmitting) {
+        // Visual feedback that the click registered, even while the
+        // request is still in flight through the tunnel.
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Posting…';
+        note.style.display = 'none';
+        return;
+      }
       const now = Math.floor(Date.now() / 1000);
       const remaining = cooldownUntil - now;
       if (remaining > 0) {
@@ -130,24 +140,42 @@
 
     async function submitComment(ev) {
       ev.preventDefault();
-      if (submitBtn.disabled) return false;
+      if (isSubmitting || submitBtn.disabled) return false;
       const form = ev.target;
       const fd = new FormData(form);
       const errEl = document.getElementById('comment-error');
       errEl.hidden = true;
-      const r = await fetch(`/v/${form.dataset.token}/comments`, { method: 'POST', body: fd });
-      if (r.ok) {
-        const body = await r.json();
-        cooldownUntil = Math.floor(Date.now() / 1000) + (body.cooldown_remaining_s || 30);
-        form.reset();
-        document.getElementById('ts-issued').value = Date.now();
-        // Reload to show the new comment (simple, no client-side append).
-        setTimeout(() => location.reload(), 600);
-        return false;
+
+      isSubmitting = true;
+      tick();  // immediate visual feedback before the network round-trip
+
+      try {
+        const r = await fetch(`/v/${form.dataset.token}/comments`, { method: 'POST', body: fd });
+        if (r.ok) {
+          const body = await r.json();
+          cooldownUntil = Math.floor(Date.now() / 1000) + (body.cooldown_remaining_s || 30);
+          form.reset();
+          document.getElementById('ts-issued').value = Date.now();
+          // Reload to show the new comment (simple, no client-side append).
+          setTimeout(() => location.reload(), 600);
+          return false;
+        }
+        const body = await r.json().catch(() => ({}));
+        errEl.textContent = humanizeCommentError(body.detail, r.status);
+        errEl.hidden = false;
+      } catch (_e) {
+        // Network failure (offline, DNS, tunnel 5xx without JSON body, etc.)
+        // The bare `await fetch` above would otherwise leave the button
+        // stuck on "Posting…" forever.
+        errEl.textContent = 'Network error. Check your connection and try again.';
+        errEl.hidden = false;
+      } finally {
+        // Only re-enable on the error paths; success reloads before this runs.
+        if (errEl && !errEl.hidden) {
+          isSubmitting = false;
+          tick();
+        }
       }
-      const body = await r.json().catch(() => ({}));
-      errEl.textContent = humanizeCommentError(body.detail, r.status);
-      errEl.hidden = false;
       return false;
     }
 

@@ -92,6 +92,42 @@ def flag(cid: int) -> bool:
     return get_comment(cid) is not None
 
 
+def raw_comments_csv(bid: int) -> bytes:
+    """All comments for one broadcast — visible + hidden — as CSV bytes.
+
+    Mirrors `analytics.raw_views_csv`: admin-side export where the
+    recipient's identity matters. The public comments API filters to
+    visible only and never exposes user_name / user_phone; this function
+    is admin-only and is only exposed behind /api/broadcasts/{bid}/comments.csv.
+    """
+    import csv
+    import io
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT c.created_at, c.status, c.author_hint, c.body, "
+            "bl.token, u.name AS user_name, u.phone AS user_phone "
+            "FROM comments c "
+            "JOIN broadcast_links bl ON bl.id = c.link_id "
+            "JOIN users u ON u.id = bl.user_id "
+            "WHERE c.broadcast_id = ? "
+            "ORDER BY c.created_at",
+            (bid,),
+        ).fetchall()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "created_at", "status", "user_name", "user_phone",
+        "token", "author_hint", "body",
+    ])
+    for r in rows:
+        d = dict(r)
+        w.writerow([
+            d["created_at"], d["status"], d["user_name"], d["user_phone"],
+            d["token"], d["author_hint"], d["body"],
+        ])
+    return buf.getvalue().encode("utf-8")
+
+
 def list_all(broadcast_id: int | None = None, status: str | None = None,
              q: str | None = None) -> list[dict]:
     """Admin-side list of comments across all broadcasts (or one)."""

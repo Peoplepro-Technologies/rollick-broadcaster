@@ -244,6 +244,7 @@ def count_broadcasts_by_category_channel(
     channel: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    q: Optional[str] = None,
 ) -> list[dict]:
     """One row per (category, delivery_channel) that has at least one
     broadcast in the filtered set. Each row carries per-status counts.
@@ -257,6 +258,16 @@ def count_broadcasts_by_category_channel(
         "date_from": date_from, "date_to": date_to,
     })
 
+    where: list[str] = []
+    params: list = []
+    if extra_where:
+        where.append(extra_where)
+        params += extra_params
+    if q:
+        where.append("(b.title LIKE ? OR b.message_text LIKE ?)")
+        like = f"%{q}%"
+        params += [like, like]
+
     sql = (
         "SELECT  b.category, b.delivery_channel AS channel, "
         "        SUM(CASE WHEN b.status = 'sent'                            THEN 1 ELSE 0 END) AS sent, "
@@ -268,10 +279,8 @@ def count_broadcasts_by_category_channel(
         "        COUNT(*)                                                   AS total "
         "FROM    broadcasts b"
     )
-    params: list = []
-    if extra_where:
-        sql += " WHERE " + extra_where
-        params += extra_params
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " GROUP BY b.category, b.delivery_channel HAVING COUNT(*) > 0 ORDER BY b.category, b.delivery_channel"
 
     with get_db() as conn:
@@ -291,6 +300,29 @@ def distinct_categories() -> list[str]:
             "AND category != '' ORDER BY category"
         ).fetchall()
     return [r[0] for r in rows]
+
+
+def search_broadcast_titles(q: str, limit: int = 8) -> list[dict]:
+    """Lightweight title-only search for the typeahead dropdown.
+
+    Returns up to `limit` rows whose title contains `q` (case-insensitive
+    substring match). Ordered by most recently created first so the
+    dropdown surfaces fresh broadcasts the admin likely cares about.
+    """
+    q = (q or "").strip()
+    if not q:
+        return []
+    like = f"%{q}%"
+    sql = (
+        "SELECT id, title, category, delivery_channel "
+        "FROM broadcasts "
+        "WHERE title LIKE ? COLLATE NOCASE "
+        "ORDER BY created_at DESC, id DESC "
+        "LIMIT ?"
+    )
+    with get_db() as conn:
+        rows = conn.execute(sql, (like, limit)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_broadcast(bid: int) -> Optional[dict]:

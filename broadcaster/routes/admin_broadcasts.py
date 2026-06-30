@@ -30,6 +30,18 @@ def list_broadcasts(
     )
 
 
+@router.get("/titles")
+def title_suggestions(q: str = "", limit: int = 8):
+    """Lightweight typeahead endpoint — returns id/title/category/channel
+    for broadcasts whose title matches `q` (case-insensitive substring).
+
+    Used by the search box on /admin/broadcasts to surface suggestions
+    as the admin types without reloading the page.
+    """
+    limit = max(1, min(int(limit or 8), 25))
+    return bc_svc.search_broadcast_titles(q=q, limit=limit)
+
+
 @router.post("")
 def create_broadcast(payload: dict, request_admin_id: int = Depends(require_admin)):
     from broadcaster.services import admin as admin_svc
@@ -120,4 +132,17 @@ def views_csv(bid: int):
         content=analytics_svc.raw_views_csv(bid),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="broadcast-{bid}-views.csv"'},
+    )
+
+
+@router.get("/{bid}/comments.csv")
+def comments_csv(bid: int):
+    """All comments (visible + hidden) for the broadcast — admin-only CSV
+    export. Mirrors /{bid}/views.csv in shape and filename convention."""
+    from broadcaster.services import comments as comments_svc
+    from fastapi.responses import Response
+    return Response(
+        content=comments_svc.raw_comments_csv(bid),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="broadcast-{bid}-comments.csv"'},
     )

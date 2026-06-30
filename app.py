@@ -102,6 +102,7 @@ def _validate_filters(query_params) -> tuple[dict, Optional[str]]:
     channel = (query_params.get("channel") or "").strip()
     date_from = (query_params.get("date_from") or "").strip()
     date_to = (query_params.get("date_to") or "").strip()
+    q = (query_params.get("q") or "").strip()
 
     flash: Optional[str] = None
     cleaned = {
@@ -109,6 +110,7 @@ def _validate_filters(query_params) -> tuple[dict, Optional[str]]:
         "channel": channel,
         "date_from": date_from,
         "date_to": date_to,
+        "q": q,
     }
 
     if (date_from and not date_to) or (date_to and not date_from):
@@ -286,12 +288,14 @@ def admin_broadcasts_page(request: Request):
         channel=filters["channel"] or None,
         date_from=filters["date_from"] or None,
         date_to=filters["date_to"] or None,
+        q=filters["q"] or None,
     )
     counts = bc_svc.count_broadcasts_by_category_channel(
         category=filters["category"] or None,
         channel=filters["channel"] or None,
         date_from=filters["date_from"] or None,
         date_to=filters["date_to"] or None,
+        q=filters["q"] or None,
     )
     category_options = bc_svc.distinct_categories()
     applied = {
@@ -299,6 +303,7 @@ def admin_broadcasts_page(request: Request):
         "channel": filters["channel"],
         "date_from": filters["date_from"],
         "date_to": filters["date_to"],
+        "q": filters["q"],
     }
     return templates.TemplateResponse(
         request, "admin/broadcasts_list.html",
@@ -335,6 +340,7 @@ def admin_broadcast_detail_page(request: Request, bid: int):
         return RedirectResponse("/admin/login", status_code=303)
     from broadcaster.services import broadcasts as bc_svc
     from broadcaster.services import analytics as analytics_svc
+    from broadcaster.services import comments as comments_svc
     b = bc_svc.get_broadcast(bid)
     if not b:
         # Broadcast was deleted (or never existed / link went stale).
@@ -347,6 +353,7 @@ def admin_broadcast_detail_page(request: Request, bid: int):
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
          "admin": {"username": "admin"},
          "broadcast": b, "links": bc_svc.list_links(bid),
+         "comments": comments_svc.list_for_broadcast(bid, status=None, q=None),
          "analytics": analytics_svc.broadcast_analytics(bid)},
     )
 

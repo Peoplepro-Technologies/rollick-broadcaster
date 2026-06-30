@@ -671,6 +671,74 @@ button[data-submit-button].is-loading {
   gap: 4px;
   min-width: 0;
 }
+.filter-field-search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  position: relative;
+}
+.search-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0, 0, 0, 0.10));
+  max-height: 280px;
+  overflow-y: auto;
+}
+.search-suggest-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.search-suggest-item + .search-suggest-item {
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+.search-suggest-item.is-active {
+  background: var(--primary-soft, rgba(237, 14, 109, 0.08));
+}
+.search-suggest-item:hover {
+  background: var(--primary-soft, rgba(237, 14, 109, 0.06));
+}
+.search-suggest-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--text, #111827);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-suggest-title mark {
+  background: transparent;
+  color: var(--primary, #ED0E6D);
+  font-weight: 700;
+}
+.search-suggest-meta {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.search-suggest-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--muted, #9ca3af);
+  text-align: center;
+}
 .filter-label {
   font-size: 11px;
   font-weight: 600;
@@ -679,7 +747,8 @@ button[data-submit-button].is-loading {
   color: var(--text-2, #6b7280);
 }
 .filter-row .filter-select,
-.filter-row .filter-date {
+.filter-row .filter-date,
+.filter-row .filter-search {
   padding: 8px 10px;
   border: 1px solid var(--border-strong, #d1d5db);
   border-radius: 6px;
@@ -690,8 +759,13 @@ button[data-submit-button].is-loading {
   min-width: 140px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+.filter-row .filter-search {
+  width: 100%;
+  min-width: 0;
+}
 .filter-row .filter-select:focus,
-.filter-row .filter-date:focus {
+.filter-row .filter-date:focus,
+.filter-row .filter-search:focus {
   outline: none;
   border-color: var(--primary, #ED0E6D);
   box-shadow: 0 0 0 3px var(--primary-soft, rgba(237, 14, 109, 0.12));

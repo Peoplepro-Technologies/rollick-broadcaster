@@ -18,17 +18,23 @@
   </div>
 
   {# ── Active filter chips (shown only when something is applied) ─ #}
-  {% set has_applied = applied.category or applied.channel or applied.date_from or applied.date_to %}
+  {% set has_applied = applied.q or applied.category or applied.channel or applied.date_from or applied.date_to %}
   {% if has_applied %}
   <div class="filter-chips">
-    {% if applied.category %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.channel %}channel={{ applied.channel }}{% endif %}{% if applied.date_from %}&date_from={{ applied.date_from }}{% endif %}{% if applied.date_to %}&date_to={{ applied.date_to }}{% endif %}" title="Remove category filter">category: <b>{{ applied.category }}</b> <span class="chip-x">×</span></a>{% endif %}
-    {% if applied.channel %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.category %}category={{ applied.category }}{% endif %}{% if applied.date_from %}&date_from={{ applied.date_from }}{% endif %}{% if applied.date_to %}&date_to={{ applied.date_to }}{% endif %}" title="Remove channel filter">channel: <b>{{ applied.channel }}</b> <span class="chip-x">×</span></a>{% endif %}
-    {% if applied.date_from and applied.date_to %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.category %}category={{ applied.category }}{% endif %}{% if applied.channel %}&channel={{ applied.channel }}{% endif %}" title="Remove date filter">{{ applied.date_from }} → {{ applied.date_to }} <span class="chip-x">×</span></a>{% endif %}
+    {% if applied.q %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.category %}category={{ applied.category }}{% endif %}{% if applied.channel %}&channel={{ applied.channel }}{% endif %}{% if applied.date_from %}&date_from={{ applied.date_from }}{% endif %}{% if applied.date_to %}&date_to={{ applied.date_to }}{% endif %}" title="Remove search">search: <b>{{ applied.q }}</b> <span class="chip-x">×</span></a>{% endif %}
+    {% if applied.category %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.q %}q={{ applied.q }}{% endif %}{% if applied.channel %}&channel={{ applied.channel }}{% endif %}{% if applied.date_from %}&date_from={{ applied.date_from }}{% endif %}{% if applied.date_to %}&date_to={{ applied.date_to }}{% endif %}" title="Remove category filter">category: <b>{{ applied.category }}</b> <span class="chip-x">×</span></a>{% endif %}
+    {% if applied.channel %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.q %}q={{ applied.q }}{% endif %}{% if applied.category %}&category={{ applied.category }}{% endif %}{% if applied.date_from %}&date_from={{ applied.date_from }}{% endif %}{% if applied.date_to %}&date_to={{ applied.date_to }}{% endif %}" title="Remove channel filter">channel: <b>{{ applied.channel }}</b> <span class="chip-x">×</span></a>{% endif %}
+    {% if applied.date_from and applied.date_to %}<a class="filter-chip" href="/admin/broadcasts?{% if applied.q %}q={{ applied.q }}{% endif %}{% if applied.category %}&category={{ applied.category }}{% endif %}{% if applied.channel %}&channel={{ applied.channel }}{% endif %}" title="Remove date filter">{{ applied.date_from }} → {{ applied.date_to }} <span class="chip-x">×</span></a>{% endif %}
   </div>
   {% endif %}
 
   {# ── Filter bar (labels above each control) ─────────────────── #}
   <form method="get" action="/admin/broadcasts" class="filter-row">
+    <label class="filter-field filter-field-search">
+      <span class="filter-label">Search by title</span>
+      <input type="search" name="q" value="{{ applied.q or '' }}"
+             class="filter-search" placeholder="Type a title…" aria-label="Search broadcasts by title">
+    </label>
     <label class="filter-field">
       <span class="filter-label">Category</span>
       <select name="category" class="filter-select" aria-label="Filter by category">
@@ -174,5 +180,7 @@
 <script type="module">
   import { applyListFormatter } from "/static/js/schedule.js";
   applyListFormatter();
+  import { applyBroadcastsSearchTypeahead } from "/static/js/broadcasts.js";
+  applyBroadcastsSearchTypeahead();
 </script>
 {% endblock %}

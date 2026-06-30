@@ -26,6 +26,32 @@
          {% if broadcast.scheduled_at %}data-broadcast-scheduled-at="{{ broadcast.scheduled_at }}"{% endif %}></div>
   </div>
 
+  <div class="card">
+    <div class="card-head">
+      <h2>Analytics</h2>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Links sent</div><div class="num">{{ analytics.totals.link_count }}</div></div>
+      <div class="kpi"><div class="label">Viewed</div><div class="num">{{ analytics.totals.viewed_count }}</div></div>
+      <div class="kpi"><div class="label">Total views</div><div class="num">{{ analytics.totals.total_views }}</div></div>
+      <div class="kpi"><div class="label">Unique viewers (hashed)</div><div class="num">{{ analytics.totals.unique_ips }}</div></div>
+      <div class="kpi"><div class="label">Comments</div><div class="num">{{ analytics.totals.comment_count }} <small style="color:var(--muted);font-weight:500;">(+{{ analytics.totals.hidden_count }} hidden)</small></div></div>
+      <div class="kpi"><div class="label">Revoked</div><div class="num">{{ analytics.totals.revoked_count }}</div></div>
+    </div>
+
+    {% if analytics.views_by_day %}
+    <h3 style="font-size: 14px; margin: 18px 0 8px;">Views by day (last 14)</h3>
+    <table class="table" style="font-size: 13px;">
+      <thead><tr><th>Day</th><th>Views</th></tr></thead>
+      <tbody>
+        {% for d in analytics.views_by_day %}
+        <tr><td>{{ d.day }}</td><td>{{ d.n }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
   <div class="card" id="links">
     <div class="card-head"><h2>Per-Subscriber Links</h2></div>
     <div class="table-wrap">
@@ -84,33 +110,44 @@
     </div>
   {% endif %}
 
-  <div class="card">
+  <div class="card" id="comments">
     <div class="card-head">
-      <h2>Analytics</h2>
+      <h2>Comments <span class="muted" style="font-weight:500;">({{ comments|length }} total)</span></h2>
       <div class="actions">
-        <a class="btn small secondary" href="/api/broadcasts/{{ broadcast.id }}/views.csv">⤓ Raw views (CSV)</a>
+        <a class="btn small secondary" href="/api/broadcasts/{{ broadcast.id }}/comments.csv">⤓ Comments CSV</a>
       </div>
     </div>
-    <div class="kpi-grid">
-      <div class="kpi"><div class="label">Links sent</div><div class="num">{{ analytics.totals.link_count }}</div></div>
-      <div class="kpi"><div class="label">Viewed</div><div class="num">{{ analytics.totals.viewed_count }}</div></div>
-      <div class="kpi"><div class="label">Total views</div><div class="num">{{ analytics.totals.total_views }}</div></div>
-      <div class="kpi"><div class="label">Unique viewers (hashed)</div><div class="num">{{ analytics.totals.unique_ips }}</div></div>
-      <div class="kpi"><div class="label">Comments</div><div class="num">{{ analytics.totals.comment_count }} <small style="color:var(--muted);font-weight:500;">(+{{ analytics.totals.hidden_count }} hidden)</small></div></div>
-      <div class="kpi"><div class="label">Revoked</div><div class="num">{{ analytics.totals.revoked_count }}</div></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>When</th><th>Recipient</th><th>Author tag</th>
+            <th>Comment</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in comments %}
+          <tr>
+            <td style="white-space:nowrap; font-size:12px; color:var(--muted);" title="{{ c.created_at }}">
+              {{ c.created_at[:16] }}
+            </td>
+            <td>
+              <b>{{ c.user_name }}</b><br>
+              <span style="font-size:12px; color:var(--muted);">{{ c.user_phone }}</span>
+            </td>
+            <td><code style="font-size:12px;">{{ c.author_hint }}</code></td>
+            <td style="white-space:pre-wrap; word-break:break-word;">{{ c.body }}</td>
+            <td>
+              {% if c.status == 'hidden' %}<span class="pill danger">Hidden</span>
+              {% else %}<span class="pill success">Visible</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="empty">No comments yet. As recipients reply on their viewer pages, they'll show up here.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-
-    {% if analytics.views_by_day %}
-    <h3 style="font-size: 14px; margin: 18px 0 8px;">Views by day (last 14)</h3>
-    <table class="table" style="font-size: 13px;">
-      <thead><tr><th>Day</th><th>Views</th></tr></thead>
-      <tbody>
-        {% for d in analytics.views_by_day %}
-        <tr><td>{{ d.day }}</td><td>{{ d.n }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
   </div>
 </main>
 {% endblock %}
