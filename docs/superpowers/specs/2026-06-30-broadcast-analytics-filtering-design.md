@@ -188,7 +188,7 @@ Two SQL queries per request (list + count). On the existing data shape and the e
 
 ## Testing
 
-`tests/test_broadcasts_page.py` uses the existing async-httpx client against an in-memory SQLite (per `tests/conftest.py` fixtures). 11 tests:
+`tests/test_broadcasts_page.py` uses the existing async-httpx client against an in-memory SQLite (per `tests/conftest.py` fixtures). 12 tests:
 
 | # | Test | Asserts |
 |---|---|---|
@@ -203,6 +203,7 @@ Two SQL queries per request (list + count). On the existing data shape and the e
 | 9 | `test_counts_and_table_agree` | For each category, sum of `total` across its cards equals number of table rows in that category. |
 | 10 | `test_filter_form_preserves_values` | Submit `?category=Promo` → page's `<select name=category>` contains `selected` on the Promo option. |
 | 11 | `test_clear_link_resets_filters` | Render page with filters set; the Clear link's `href` is exactly `/admin/broadcasts` (no query string). |
+| 12 | `test_single_date_bound_flashes_and_keeps_table` | `?date_from=2026-06-30` (no `date_to`) → 200 OK, flash message, table unfiltered. |
 
 Plus a single parity test in the API suite: `test_api_broadcasts_accepts_same_filter_kwargs` — confirms `/api/broadcasts?category=Promo&...` returns the same rows as `/admin/broadcasts?category=Promo&...` (both go through `_broadcast_filters_where`).
 
