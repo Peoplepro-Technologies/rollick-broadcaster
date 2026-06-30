@@ -395,6 +395,37 @@ async def test_excel_import_rebuild_ignores_empty_dept(authed_client):
     assert r.json()["dept_location_changed"] is False
 
 
+def test_import_to_csv_errors_basic():
+    from broadcaster.services.users import import_to_csv_errors
+    errs = [
+        {"row": 3, "field": "email",  "value": "bad@",     "reason": "invalid_email_format"},
+        {"row": 5, "field": "phone",  "value": "1234",      "reason": "invalid_phone_format"},
+        {"row": 9, "field": "email",  "value": "x@y.com",   "reason": "duplicate_email_in_file"},
+    ]
+    csv_bytes = import_to_csv_errors(errs)
+    text = csv_bytes.decode("utf-8-sig")  # tolerate BOM
+    lines = [ln for ln in text.splitlines() if ln]
+    assert lines[0] == "Row,Field,Value,Reason,Reason (human)"
+    assert "invalid_phone_format" in lines[2]
+    assert "Phone must be 10 digits" in lines[2]
+    assert len(lines) == 4  # header + 3 rows
+
+
+def test_import_to_csv_errors_empty():
+    from broadcaster.services.users import import_to_csv_errors
+    csv_bytes = import_to_csv_errors([])
+    text = csv_bytes.decode("utf-8-sig")
+    assert text.strip().splitlines() == ["Row,Field,Value,Reason,Reason (human)"]
+
+
+def test_import_to_csv_errors_handles_missing_keys():
+    from broadcaster.services.users import import_to_csv_errors
+    errs = [{"reason": "db_error: UNIQUE constraint failed: users.phone"}]
+    out = import_to_csv_errors(errs).decode("utf-8-sig")
+    assert "db_error" in out
+    assert "Database error" in out
+
+
 async def test_excel_export(authed_client):
     await authed_client.post("/api/users", json={"name": "Exp", "phone": "1212121212"})
     r = await authed_client.get("/api/users/download")

@@ -359,6 +359,49 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
     }
 
 
+# Server-side single source of truth for error reason -> human text.
+# Mirrors the front-end humanizeError() map in static/js/users.js; keep in sync.
+ERROR_HUMAN = {
+    "name_or_phone_missing":      "Name and phone are required.",
+    "invalid_phone_format":       "Phone must be 10 digits (Indian mobile).",
+    "invalid_email_format":       "Email format is invalid.",
+    "duplicate_phone_in_file":    "Duplicate phone in uploaded file.",
+    "duplicate_email_in_file":    "Duplicate email in uploaded file.",
+    "duplicate_email_in_db":      "Email already exists for another user.",
+    "phone_taken":                "Phone already exists; skipped (upsert off).",
+    "db_error":                   "Database error while saving row.",
+}
+
+
+def import_to_csv_errors(errors: list[dict]) -> bytes:
+    """Render an errors[] array (as returned by import_from_xlsx) as RFC-4180 CSV.
+
+    Returns UTF-8 + BOM (so Excel detects encoding correctly). Pure function —
+    does NOT re-read stored state.
+    """
+    import csv
+    buf = io.StringIO()
+    w = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+    w.writerow(["Row", "Field", "Value", "Reason", "Reason (human)"])
+    for e in errors:
+        reason = e.get("reason", "") or ""
+        # Map db_error:* variants (e.g. "db_error: UNIQUE constraint failed: ...")
+        # to the canonical human text by stripping the message suffix.
+        human_reason = reason
+        human_key = reason
+        if reason.startswith("db_error"):
+            human_key = "db_error"
+        w.writerow([
+            e.get("row", "") or "",
+            e.get("field") or "",
+            e.get("value") if e.get("value") is not None else "",
+            reason,
+            ERROR_HUMAN.get(human_key, reason),
+        ])
+    out = buf.getvalue()
+    return ("﻿" + out).encode("utf-8")
+
+
 def export_to_xlsx() -> bytes:
     """Return an in-memory .xlsx of all users."""
     wb = Workbook()
