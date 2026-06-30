@@ -19,9 +19,20 @@ head_sampling_rate = 1
 enabled = true
 head_sampling_rate = 0.01
 
-# KV namespace binding — created with:
-#   wrangler kv:namespace create BACKEND_URLS
-# Copy the printed `id = "..."` into the line below before `wrangler deploy`.
+# KV namespace binding.
+#
+# Two ways to create the namespace (pick one, do this once):
+#
+#   (a) Auto-provisioned on first `wrangler deploy` (v4 default):
+#       Leave the `id` line commented out — wrangler creates the
+#       namespace and writes the id back into this file.
+#
+#   (b) Explicit create now (no deploy needed):
+#       wrangler kv namespace create BACKEND_URLS --update-config
+#       Wrangler creates the namespace and writes the id here.
+#
+# After the id is set (either way), copy it to .env as CF_KV_NAMESPACE_ID
+# so the host-side start-tunnel.sh script can write to it.
 [[kv_namespaces]]
 binding = "BACKEND_URLS"
-id = "REPLACE_AFTER_wrangler_kv_namespace_create"
+# id = "auto-provisioned on first wrangler deploy"

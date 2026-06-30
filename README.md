@@ -56,7 +56,7 @@ restarts.
 cd worker
 npm install -g wrangler          # if you don't have it
 wrangler login
-wrangler kv:namespace create BACKEND_URLS
+wrangler kv namespace create BACKEND_URLS --update-config
 # → copy the printed id into wrangler.toml (replaces the placeholder)
 wrangler deploy
 # → copy the printed https://<subdomain>.<account>.workers.dev URL

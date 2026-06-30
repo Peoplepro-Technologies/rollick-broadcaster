@@ -29,33 +29,37 @@ behind it changes; the Worker always 307s to the live one.
 Prerequisites: a Cloudflare account and Node.js (verified with Node 22).
 
 ```bash
-# 1. Install wrangler (if you don't have it)
+# 1. Install wrangler v4+ (if you don't have it)
 npm install -g wrangler
 
 # 2. Log in to your Cloudflare account
 wrangler login
 
-# 3. Create the KV namespace (one-time)
-wrangler kv:namespace create BACKEND_URLS
-# → prints something like:
-#   { binding = "BACKEND_URLS", id = "abcd1234..." }
-# Copy the id into wrangler.toml where it currently says
-# `id = "REPLACE_AFTER_wrangler_kv_namespace_create"`.
+# 3. Create the KV namespace (one-time). Wrangler v4 uses spaces
+#    (not colons) and has a --update-config flag that writes the
+#    new id into wrangler.toml for you:
+wrangler kv namespace create BACKEND_URLS --update-config
+# After this, wrangler.toml will have a real `id = "abcd1234..."` line.
+# (Alternative: skip this step and just run `wrangler deploy` — v4 will
+# auto-provision the namespace and write the id back for you.)
 
-# 4. Deploy the Worker
+# 4. Copy the id from wrangler.toml into the repo's .env as
+#    CF_KV_NAMESPACE_ID so the host-side start-tunnel.sh can find it.
+
+# 5. Deploy the Worker
 wrangler deploy
 # → prints something like:
 #   Published rollick-broadcaster-redirect (1.23 sec)
 #   https://rollick-broadcaster-redirect.<your-account>.workers.dev
 # Note the URL — that becomes your stable BASE_PUBLIC_URL.
 
-# 5. Create a Cloudflare API token (host writes to KV from start-tunnel.sh)
+# 6. Create a Cloudflare API token (host writes to KV from start-tunnel.sh)
 #    Cloudflare dashboard → My Profile → API Tokens → Create Token
 #    → "Edit Cloudflare Workers" template
 #    → Account Resources: Workers KV Storage → Edit (scope to BACKEND_URLS)
 #    Copy the token; you'll add it to .env in the repo as CF_API_TOKEN.
 
-# 6. Get your Cloudflare Account ID
+# 7. Get your Cloudflare Account ID
 #    Cloudflare dashboard → right sidebar → "Account ID"
 #    Copy it; you'll add it to .env in the repo as CF_ACCOUNT_ID.
 ```
