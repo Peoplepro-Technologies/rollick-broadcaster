@@ -35,4 +35,4 @@ head_sampling_rate = 0.01
 # so the host-side start-tunnel.sh script can write to it.
 [[kv_namespaces]]
 binding = "BACKEND_URLS"
-# id = "auto-provisioned on first wrangler deploy"
+id = "cd93ab4e025c47a9a8d0bc74d52f6474"
