@@ -42,6 +42,26 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Optional: Cloudflare quick tunnel (random *.trycloudflare.com URL) so
+  # emails can carry links reachable from the public internet. The URL
+  # is captured by scripts/start-tunnel.sh and written to .env as
+  # BASE_PUBLIC_URL, then the app is restarted so outgoing emails use it.
+  # Enable by `docker compose --profile tunnel up -d`.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.6.1
+    container_name: rollick-cloudflared
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://app:8123
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   # Optional: nightly SQLite backup to a host-mounted directory.
   # Enable by `docker compose --profile backup up -d`.
   backup:
