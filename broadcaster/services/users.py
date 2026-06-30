@@ -223,14 +223,23 @@ def import_from_xlsx(file: UploadFile) -> dict:
         raise HTTPException(status_code=400, detail=f"invalid_xlsx: {e}")
 
     ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
+    # Materialize the iter_rows once, but cap at MAX_ROWS to defend against
+    # pathological xlsx files where the sheet has been resized to 1M rows
+    # (only a handful have data; the rest are blank cells but openpyxl still
+    # yields them all). Drop fully-empty rows cheaply before any validation.
+    MAX_ROWS = 5_000
+    raw_rows = list(ws.iter_rows(values_only=True, max_row=MAX_ROWS))
+    if not raw_rows:
         return {"inserted": 0, "updated": 0, "skipped": 0, "deleted": 0, "errors": []}
 
     # Detect header row: if first row matches known header names, skip it.
-    first = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
+    first = [str(c).strip().lower() if c is not None else "" for c in raw_rows[0]]
     has_header = any(h in EXCEL_HEADERS for h in first)
-    data_rows = rows[1:] if has_header else rows
+    data_rows = raw_rows[1:] if has_header else raw_rows
+    # Skip blank rows up front (cheaper than running them through validation).
+    data_rows = [r for r in data_rows if any(c is not None and str(c).strip() != "" for c in r)]
+    if not data_rows:
+        return {"inserted": 0, "updated": 0, "skipped": 0, "deleted": 0, "errors": []}
 
     inserted = updated = skipped = 0
     errors: list[dict] = []
@@ -239,29 +248,41 @@ def import_from_xlsx(file: UploadFile) -> dict:
     valid_rows: list[tuple] = []       # (idx, d, norm_phone, email_norm)
     seen_phones: set[str] = set()
     seen_emails: set[str] = set()
+    # Cap errors[] so a pathological xlsx (or a developer pasting a 1M-row
+    # export) doesn't return a multi-megabyte JSON. The user can use the
+    # 'Download errors CSV' button — which uses the same cap.
+    MAX_ERRORS = 100
+    errors_truncated = False
 
     # ── First pass: validate every row, collect valid rows + sets ──
+    def _push_error(err: dict):
+        nonlocal errors_truncated
+        if len(errors) < MAX_ERRORS:
+            errors.append(err)
+        else:
+            errors_truncated = True
+
     for idx, row in enumerate(data_rows, start=2 if has_header else 1):
         d = _row_to_dict(row)
         if not d["name"] and not d["phone"]:
-            errors.append(_err(idx, "name_or_phone_missing", None, None))
+            _push_error(_err(idx, "name_or_phone_missing", None, None))
             skipped += 1
             continue
         if not d["name"]:
-            errors.append(_err(idx, "name_or_phone_missing", "name", ""))
+            _push_error(_err(idx, "name_or_phone_missing", "name", ""))
             skipped += 1
             continue
         if not d["phone"]:
-            errors.append(_err(idx, "name_or_phone_missing", "phone", ""))
+            _push_error(_err(idx, "name_or_phone_missing", "phone", ""))
             skipped += 1
             continue
         norm_phone = _normalize_phone(d["phone"])
         if not norm_phone:
-            errors.append(_err(idx, "invalid_phone_format", "phone", d["phone"]))
+            _push_error(_err(idx, "invalid_phone_format", "phone", d["phone"]))
             skipped += 1
             continue
         if norm_phone in seen_phones:
-            errors.append(_err(idx, "duplicate_phone_in_file", "phone", norm_phone))
+            _push_error(_err(idx, "duplicate_phone_in_file", "phone", norm_phone))
             skipped += 1
             continue
         seen_phones.add(norm_phone)
@@ -270,13 +291,13 @@ def import_from_xlsx(file: UploadFile) -> dict:
         email_norm = d["email"].lower() if d["email"] else ""
         if email_norm:
             if email_norm in seen_emails:
-                errors.append(_err(idx, "duplicate_email_in_file", "email", d["email"]))
+                _push_error(_err(idx, "duplicate_email_in_file", "email", d["email"]))
                 skipped += 1
                 continue
             seen_emails.add(email_norm)
             file_emails.add(email_norm)
             if not EMAIL_RE.match(d["email"]):
-                errors.append(_err(idx, "invalid_email_format", "email", d["email"]))
+                _push_error(_err(idx, "invalid_email_format", "email", d["email"]))
                 skipped += 1
                 continue
 
@@ -374,7 +395,7 @@ def import_from_xlsx(file: UploadFile) -> dict:
                 msg = str(e)
                 if len(msg) > 80:
                     msg = msg[:80]
-                errors.append(_err(idx, f"db_error: {e}", None, msg))
+                _push_error(_err(idx, f"db_error: {e}", None, msg))
                 skipped += 1
 
     # Conditional auto-group rebuild — only when dept/location set changed.
@@ -392,6 +413,7 @@ def import_from_xlsx(file: UploadFile) -> dict:
         "skipped": skipped,
         "deleted": deleted,
         "errors": errors,
+        "errors_truncated": errors_truncated,
         "dept_location_changed": dept_loc_changed,
         "groups_created": groups_created,
     }

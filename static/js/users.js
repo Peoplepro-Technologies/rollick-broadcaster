@@ -90,8 +90,9 @@ function openImportErrorsModal(body) {
   _importErrorsBody = body;
   const rows = body.errors || [];
   const imported = (body.inserted || 0) + (body.updated || 0);
+  const truncated = body.errors_truncated ? ` Showing first ${rows.length}; download the CSV for the full list.` : '';
   document.getElementById('import-errors-summary').textContent =
-    `${rows.length} row${rows.length === 1 ? '' : 's'} skipped, ${imported} row${imported === 1 ? '' : 's'} imported. Click Close to refresh the user list.`;
+    `${body.skipped || rows.length} row${(body.skipped || rows.length) === 1 ? '' : 's'} skipped, ${imported} row${imported === 1 ? '' : 's'} imported. Click Close to refresh the user list.${truncated}`;
   const tbody = document.getElementById('import-errors-tbody');
   tbody.innerHTML = '';
   for (const e of rows) {

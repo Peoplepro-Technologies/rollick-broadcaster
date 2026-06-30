@@ -9,6 +9,11 @@ from fastapi.responses import Response
 from broadcaster.routes.admin_auth import require_admin
 from broadcaster.services import users as users_svc
 
+# Cap upload size so a 1M-row spreadsheet doesn't pin the browser/server.
+# 10 MiB is comfortably larger than any realistic subscriber list export
+# (a row is ~100 bytes; 10 MiB ≈ 100k rows).
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
 router = APIRouter(
     prefix="/api/users",
     tags=["users"],
@@ -69,6 +74,13 @@ def template():
 async def upload_excel(
     file: UploadFile = File(...),
 ):
+    # Reject the upload before reading it into memory; gives the user a
+    # clear 413 instead of letting the browser hang on a giant POST.
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"file_too_large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)",
+        )
     return users_svc.import_from_xlsx(file)
 
 
