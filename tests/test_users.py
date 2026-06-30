@@ -320,6 +320,81 @@ async def test_excel_import_flags_db_email_conflict(authed_client):
     assert body["errors"][0]["reason"] == "duplicate_email_in_db"
 
 
+async def test_excel_import_triggers_rebuild_only_when_dept_changes(authed_client):
+    """First import with a new dept should rebuild; second import with same dept should NOT."""
+    blob1 = _xlsx_bytes([
+        ["name", "phone", "department", "location"],
+        ["U1", "1111111111", "Eng", "BLR"],
+    ])
+    files1 = {"file": ("u1.xlsx", blob1, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r1 = await authed_client.post("/api/users/upload-excel", files=files1)
+    b1 = r1.json()
+    assert b1["dept_location_changed"] is True
+    assert b1["groups_created"] >= 1
+
+    blob2 = _xlsx_bytes([
+        ["name", "phone", "department", "location"],
+        ["U2", "2222222222", "Eng", "BLR"],
+    ])
+    files2 = {"file": ("u2.xlsx", blob2, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r2 = await authed_client.post("/api/users/upload-excel", files=files2)
+    b2 = r2.json()
+    assert b2["dept_location_changed"] is False
+    assert b2["groups_created"] == 0
+
+
+async def test_excel_import_rebuild_fires_on_case_insensitive_new_dept(authed_client):
+    """'Eng' and 'eng' are the same dept after lower(trim()) — second import must NOT trigger rebuild."""
+    blob1 = _xlsx_bytes([
+        ["name", "phone", "department"],
+        ["U1", "1111111111", "Eng"],
+    ])
+    files1 = {"file": ("u1.xlsx", blob1, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r1 = await authed_client.post("/api/users/upload-excel", files=files1)
+    assert r1.json()["dept_location_changed"] is True
+
+    blob2 = _xlsx_bytes([
+        ["name", "phone", "department"],
+        ["U2", "2222222222", "eng"],  # case-only difference
+    ])
+    files2 = {"file": ("u2.xlsx", blob2, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r2 = await authed_client.post("/api/users/upload-excel", files=files2)
+    assert r2.json()["dept_location_changed"] is False
+
+
+async def test_excel_import_rebuild_detects_changed_dept(authed_client):
+    """Updating an existing user's dept to a NEW value must trigger rebuild."""
+    blob1 = _xlsx_bytes([
+        ["name", "phone", "department"],
+        ["U1", "1111111111", "Eng"],
+    ])
+    files1 = {"file": ("u1.xlsx", blob1, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r1 = await authed_client.post("/api/users/upload-excel", files=files1)
+    assert r1.json()["dept_location_changed"] is True
+
+    blob2 = _xlsx_bytes([
+        ["name", "phone", "department"],
+        ["U1", "1111111111", "Sales"],
+    ])
+    files2 = {"file": ("u2.xlsx", blob2, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r2 = await authed_client.post("/api/users/upload-excel", files=files2)
+    b2 = r2.json()
+    assert b2["updated"] == 1
+    assert b2["dept_location_changed"] is True
+    assert b2["groups_created"] >= 1
+
+
+async def test_excel_import_rebuild_ignores_empty_dept(authed_client):
+    """Empty dept strings must NOT trigger rebuild when DB had no dept."""
+    blob = _xlsx_bytes([
+        ["name", "phone", "department"],
+        ["U1", "1111111111", ""],
+    ])
+    files = {"file": ("u.xlsx", blob, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await authed_client.post("/api/users/upload-excel", files=files)
+    assert r.json()["dept_location_changed"] is False
+
+
 async def test_excel_export(authed_client):
     await authed_client.post("/api/users", json={"name": "Exp", "phone": "1212121212"})
     r = await authed_client.get("/api/users/download")

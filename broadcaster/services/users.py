@@ -19,9 +19,15 @@ from fastapi import HTTPException, UploadFile, status
 from openpyxl import Workbook, load_workbook
 
 from broadcaster.db import get_db
+from broadcaster.services import groups as groups_svc
 
 PHONE_RE = re.compile(r"^\d{10}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _norm_dept_loc(s) -> str:
+    """Case+whitespace-insensitive dept/location comparison key. Empty -> ''."""
+    return (s or "").strip().lower()
 
 
 def _normalize_phone(raw: str) -> str | None:
@@ -218,8 +224,25 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
     errors: list[dict] = []
     seen_phones: set[str] = set()
     seen_emails: set[str] = set()
+    dept_loc_changed = False
 
     with get_db() as conn:
+        # Snapshot of current dept/location values BEFORE the import runs.
+        # Used to detect "new" values introduced by this upload.
+        existing_depts = {
+            _norm_dept_loc(r["department"])
+            for r in conn.execute(
+                "SELECT DISTINCT department FROM users "
+                "WHERE department IS NOT NULL AND department != ''"
+            ).fetchall()
+        }
+        existing_locs = {
+            _norm_dept_loc(r["location"])
+            for r in conn.execute(
+                "SELECT DISTINCT location FROM users "
+                "WHERE location IS NOT NULL AND location != ''"
+            ).fetchall()
+        }
         for idx, row in enumerate(data_rows, start=2 if has_header else 1):
             d = _row_to_dict(row)
             if not d["name"] and not d["phone"]:
@@ -271,11 +294,18 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                 continue
 
             existing = conn.execute(
-                "SELECT id FROM users WHERE phone = ?", (norm_phone,)
+                "SELECT id, department, location FROM users WHERE phone = ?", (norm_phone,)
             ).fetchone()
 
             try:
                 if existing and upsert:
+                    # Detect dept/location change for the rebuild trigger.
+                    new_dept = _norm_dept_loc(d["department"])
+                    new_loc  = _norm_dept_loc(d["location"])
+                    old_dept = _norm_dept_loc(existing["department"])
+                    old_loc  = _norm_dept_loc(existing["location"])
+                    if (new_dept and new_dept != old_dept) or (new_loc and new_loc != old_loc):
+                        dept_loc_changed = True
                     conn.execute(
                         "UPDATE users SET name=?, email=?, department=?, location=?, is_active=? "
                         "WHERE id = ?",
@@ -288,6 +318,13 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                     errors.append(_err(idx, "phone_taken", "phone", norm_phone))
                     skipped += 1
                 else:
+                    # Detect a NEW dept/location value (not previously in DB).
+                    new_dept = _norm_dept_loc(d["department"])
+                    new_loc  = _norm_dept_loc(d["location"])
+                    if new_dept and new_dept not in existing_depts:
+                        dept_loc_changed = True
+                    if new_loc and new_loc not in existing_locs:
+                        dept_loc_changed = True
                     conn.execute(
                         "INSERT INTO users (name, phone, email, department, location, is_active, created_at) "
                         "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -303,7 +340,23 @@ def import_from_xlsx(file: UploadFile, upsert: bool = True) -> dict:
                 errors.append(_err(idx, f"db_error: {e}", None, msg))
                 skipped += 1
 
-    return {"inserted": inserted, "updated": updated, "skipped": skipped, "errors": errors}
+    # Conditional auto-group rebuild — only when dept/location set changed.
+    groups_created = 0
+    if dept_loc_changed:
+        groups_svc.rebuild_auto_groups()
+        with get_db() as conn:
+            groups_created = conn.execute(
+                "SELECT COUNT(*) AS n FROM groups WHERE is_auto = 1"
+            ).fetchone()["n"]
+
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "dept_location_changed": dept_loc_changed,
+        "groups_created": groups_created,
+    }
 
 
 def export_to_xlsx() -> bytes:
