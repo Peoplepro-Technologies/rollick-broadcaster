@@ -133,40 +133,82 @@ def test_kv_get_http_error_raises():
 # ---- health_probe -----------------------------------------------------------
 
 
+class _FakeCompleted:
+    """Minimal stand-in for subprocess.CompletedProcess for health_probe tests."""
+    def __init__(self, stdout="", stderr=""):
+        self.stdout = stdout
+        self.stderr = stderr
+
+
 def test_health_probe_appends_api_health_path():
-    seen = []
+    seen_urls = []
 
-    def fake(url, *a, **kw):
-        seen.append(url)
-        return _ok(200)
+    def fake_run(cmd, *a, **kw):
+        seen_urls.append(cmd[-1])  # last positional arg is the URL
+        return _FakeCompleted(stdout="200")
 
-    with patch("urllib.request.urlopen", fake):
+    with patch("subprocess.run", fake_run):
         tunnel_kv.health_probe("https://abc.workers.dev")
-    assert seen == ["https://abc.workers.dev/api/health"]
+    assert seen_urls == ["https://abc.workers.dev/api/health"]
+
+
+def test_health_probe_sends_browser_ua():
+    """Cloudflare's WAF blocks Python-urllib with 1010; the probe must use
+    a browser-like UA so the test exercises the real path users hit."""
+    seen_ua = []
+
+    def fake_run(cmd, *a, **kw):
+        # -A curl/8.10.1 is somewhere in the args
+        if "-A" in cmd:
+            i = cmd.index("-A")
+            seen_ua.append(cmd[i + 1])
+        return _FakeCompleted(stdout="200")
+
+    with patch("subprocess.run", fake_run):
+        tunnel_kv.health_probe("https://abc.workers.dev")
+    assert seen_ua == ["curl/8.10.1"]
+
+
+def test_health_probe_follows_redirects():
+    """`curl -L` must be in the args so the Worker 307 to the backend is followed."""
+    seen_cmd = []
+
+    def fake_run(cmd, *a, **kw):
+        seen_cmd.extend(cmd)
+        return _FakeCompleted(stdout="200")
+
+    with patch("subprocess.run", fake_run):
+        tunnel_kv.health_probe("https://abc.workers.dev")
+    assert "-L" in seen_cmd
 
 
 def test_health_probe_strips_trailing_slash():
-    seen = []
+    seen_urls = []
 
-    def fake(url, *a, **kw):
-        seen.append(url)
-        return _ok(200)
+    def fake_run(cmd, *a, **kw):
+        seen_urls.append(cmd[-1])
+        return _FakeCompleted(stdout="200")
 
-    with patch("urllib.request.urlopen", fake):
+    with patch("subprocess.run", fake_run):
         tunnel_kv.health_probe("https://abc.workers.dev/")
-    assert seen == ["https://abc.workers.dev/api/health"]
+    assert seen_urls == ["https://abc.workers.dev/api/health"]
 
 
 def test_health_probe_returns_200_on_success():
-    with patch("urllib.request.urlopen", _urlopen_seq([(200, "")])):
+    with patch("subprocess.run", lambda *a, **kw: _FakeCompleted(stdout="200")):
         assert tunnel_kv.health_probe("https://abc.workers.dev") == 200
 
 
 def test_health_probe_returns_status_on_5xx():
     """If the final response (after redirects) is non-2xx, return that code."""
-    err = _http_error(502, "Bad Gateway")
-    with patch("urllib.request.urlopen", _urlopen_seq([err])):
+    with patch("subprocess.run", lambda *a, **kw: _FakeCompleted(stdout="502")):
         assert tunnel_kv.health_probe("https://abc.workers.dev") == 502
+
+
+def test_health_probe_raises_on_non_digit_output():
+    with patch("subprocess.run", lambda *a, **kw: _FakeCompleted(stdout="", stderr="connection refused")):
+        with pytest.raises(RuntimeError, match=r"connection refused"):
+            tunnel_kv.health_probe("https://abc.workers.dev")
 
 
 # ---- main CLI ---------------------------------------------------------------

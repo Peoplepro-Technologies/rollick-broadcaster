@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -48,6 +49,7 @@ def kv_put(url: str, value: str, token: str, *, timeout: float = 10.0) -> None:
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "text/plain",
+            "User-Agent": "curl/8.10.1",
         },
     )
     try:
@@ -74,7 +76,10 @@ def kv_get(url: str, token: str, *, timeout: float = 10.0) -> str:
     req = urllib.request.Request(
         url,
         method="GET",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "curl/8.10.1",
+        },
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -92,20 +97,39 @@ def kv_get(url: str, token: str, *, timeout: float = 10.0) -> str:
 def health_probe(public_url: str, *, timeout: float = 10.0) -> int:
     """Hit <public_url>/api/health and return the final HTTP status.
 
-    urllib follows 307 redirects automatically (Python 3), so the Worker
-    307 → trycloudflare backend → 200 chain is transparent. A non-2xx
-    final response is returned as-is (so the caller can branch on 502/503).
+    Uses `curl` (subprocess) rather than urllib because the local Python
+    SSL stack on this host fails TLS handshakes against Cloudflare's
+    edge with SSLV3_ALERT_HANDSHAKE_FAILURE, while curl handles the
+    same handshake fine. The chain (Worker 307 → trycloudflare → app)
+    is identical to what a real browser hits.
+
+    Returns the final HTTP status after following redirects.
     """
     health_url = public_url.rstrip("/") + "/api/health"
     try:
-        with urllib.request.urlopen(health_url, timeout=timeout) as resp:
-            return resp.status
-    except urllib.error.HTTPError as e:
-        # urlopen raises on non-2xx AFTER following any redirects, so this
-        # is the terminal code the user actually reached.
-        return e.code
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Health probe failed: {e.reason}") from e
+        result = subprocess.run(
+            [
+                "curl",
+                "-sS",
+                "-L",          # follow redirects (Worker 307s)
+                "-o", "/dev/null",
+                "-w", "%{http_code}",
+                "--max-time", str(int(timeout)),
+                "-A", "curl/8.10.1",   # browser-like UA (WAF blocks Python-urllib with 1010)
+                health_url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout + 5,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError("curl not found on PATH; install it or fix health_probe") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"Health probe timed out after {timeout}s") from e
+    code_str = result.stdout.strip()
+    if not code_str.isdigit():
+        raise RuntimeError(f"Health probe failed: {result.stderr.strip()[:200]}")
+    return int(code_str)
 
 
 # ---- CLI entry point --------------------------------------------------------
