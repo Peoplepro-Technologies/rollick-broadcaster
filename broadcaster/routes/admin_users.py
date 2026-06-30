@@ -1,7 +1,9 @@
 """Admin users router — CRUD + Excel import/export + preview."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from datetime import datetime
+
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from broadcaster.routes.admin_auth import require_admin
@@ -69,6 +71,21 @@ async def upload_excel(
     upsert: bool = Query(default=True),
 ):
     return users_svc.import_from_xlsx(file, upsert=upsert)
+
+
+@router.post("/upload-excel/errors.csv")
+async def upload_excel_errors_csv(payload: dict = Body(...)):
+    """Return the same `errors[]` array as RFC-4180 CSV. 400 when empty."""
+    errors = payload.get("errors") or []
+    if not isinstance(errors, list) or not errors:
+        raise HTTPException(status_code=400, detail="no_errors")
+    blob = users_svc.import_to_csv_errors(errors)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return Response(
+        content=blob,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="users_import_errors_{stamp}.csv"'},
+    )
 
 
 @router.get("/preview")

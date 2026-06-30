@@ -426,6 +426,31 @@ def test_import_to_csv_errors_handles_missing_keys():
     assert "Database error" in out
 
 
+async def test_excel_errors_csv_endpoint(authed_client):
+    errs = [
+        {"row": 3, "field": "email", "value": "bad@", "reason": "invalid_email_format"},
+        {"row": 7, "field": "phone", "value": "12345", "reason": "invalid_phone_format"},
+    ]
+    r = await authed_client.post("/api/users/upload-excel/errors.csv", json={"errors": errs})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers["content-disposition"]
+    body = r.content.decode("utf-8-sig")
+    assert "invalid_email_format" in body
+    assert "Email format is invalid." in body
+
+
+async def test_excel_errors_csv_endpoint_rejects_empty(authed_client):
+    r = await authed_client.post("/api/users/upload-excel/errors.csv", json={"errors": []})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "no_errors"
+
+
+async def test_excel_errors_csv_endpoint_unauth(client):
+    r = await client.post("/api/users/upload-excel/errors.csv", json={"errors": [{"row": 1}]})
+    assert r.status_code == 401
+
+
 async def test_excel_export(authed_client):
     await authed_client.post("/api/users", json={"name": "Exp", "phone": "1212121212"})
     r = await authed_client.get("/api/users/download")
