@@ -462,6 +462,33 @@ def admin_settings_page(request: Request):
     )
 
 
+@app.get("/admin/admins", response_class=HTMLResponse)
+def admin_admins_page(request: Request):
+    """super_admin-only roster page. Backend already lives in
+    broadcaster/routes/admins.py — this is the SSR entry point."""
+    state, value = _page_admin(request, "super_admin")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "admins")
+    admin = value
+    import json as _json
+    from broadcaster.services import admin as admin_svc
+    return templates.TemplateResponse(
+        request,
+        "admin/admins.html",
+        {
+            "app_name": get_settings().app_name,
+            "active_nav": "admins",
+            "current_admin": admin,
+            "admins": [dict(r) for r in admin_svc.list_admins()],
+            "current_admin_json": _json.dumps(
+                {"id": admin.id, "username": admin.username, "role": admin.role}
+            ),
+        },
+    )
+
+
 @app.get("/")
 def root() -> dict:
     return {

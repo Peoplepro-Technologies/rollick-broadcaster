@@ -424,6 +424,12 @@ PAGE_GATES = [
     ("management",    "/admin/settings",          200),
     ("hr_admin",      "/admin/settings",          403),
     ("content_admin", "/admin/settings",          403),
+
+    # ── admins roster (super_admin only) ─────────────────────────
+    ("super_admin",   "/admin/admins",             200),
+    ("hr_admin",      "/admin/admins",             403),
+    ("content_admin", "/admin/admins",             403),
+    ("management",    "/admin/admins",             403),
 ]
 
 
@@ -473,6 +479,25 @@ async def test_content_admin_nav_omits_users_groups(client):
     assert 'href="/admin/users"' not in body
     assert 'href="/admin/groups"' not in body
     assert 'href="/admin/broadcasts"' in body
+
+
+async def test_super_admin_nav_includes_admins_link(client):
+    """Super admin's topbar nav must include a link to /admin/admins."""
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    r = await client.get("/admin/", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    assert 'href="/admin/admins"' in r.text
+
+
+async def test_management_nav_omits_admins_link(client):
+    """Management does NOT see the Admins link in the topbar."""
+    _seed_admin("mgr_no_admins", "management")
+    await client.post("/api/auth/logout")
+    await _login_as(client, "mgr_no_admins")
+    r = await client.get("/admin/", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    assert 'href="/admin/admins"' not in r.text
 
 
 async def test_unauth_redirects_to_login(client):
