@@ -77,3 +77,38 @@ def test_broadcasts_list_uses_broadcasts_js_for_typeahead() -> None:
         "broadcasts_list.html should import schedule.js (applyListFormatter) "
         "from the served /static/ path."
     )
+
+
+async def test_admins_js_is_served_at_static_path(client):
+    """Runtime regression for the admin-panel bug: template imports
+    `/static/js/admins.js` but the file must actually be served from
+    the FastAPI /static mount (the served `static/` dir at the repo
+    root). A 404 here means every admin-page button (Add, Change role,
+    Change password, Delete) is a dead <button>."""
+    r = await client.get("/static/js/admins.js")
+    assert r.status_code == 200, (
+        f"admins.js not served at /static/js/admins.js (got {r.status_code}). "
+        f"Place the file at the repo-root static/ dir, not under "
+        f"broadcaster/static/ — only BASE_DIR/static is mounted."
+    )
+    # Sanity: the file has the JS entry points the template click
+    # handlers call.
+    body = r.text
+    assert "openAddAdmin" in body
+    assert "openRoleModal" in body
+    assert "openPasswordModal" in body
+    assert "openDeleteModal" in body
+    assert "openSelfPasswordModal" in body
+
+
+async def test_admins_html_references_served_admins_js(client):
+    """Page itself must render and reference the served JS path."""
+    await client.post("/api/auth/logout")
+    await client.post(
+        "/api/auth/login",
+        data={"username": "admin", "password": "test-admin-pass"},
+        headers={"Accept": "application/json"},
+    )
+    r = await client.get("/admin/admins", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    assert 'src="/static/js/admins.js"' in r.text
