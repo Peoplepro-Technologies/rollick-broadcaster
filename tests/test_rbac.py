@@ -262,3 +262,22 @@ def test_load_current_admin_401_when_no_session(isolated_admin_db):
     with pytest.raises(HTTPException) as exc:
         load_current_admin(req)
     assert exc.value.status_code == 401
+
+
+# ── Task 5: /api/auth/me returns role ─────────────────────────
+
+
+async def test_me_returns_role(client):
+    """After login, /api/auth/me echoes username, id, and role."""
+    r = await client.post(
+        "/api/auth/login",
+        data={"username": "admin", "password": "test-admin-pass"},
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 200
+    r = await client.get("/api/auth/me")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["username"] == "admin"
+    assert body["role"] == "super_admin"
+    assert "id" in body

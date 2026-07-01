@@ -12,6 +12,13 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import BadSignature
 
 from broadcaster.services import admin as admin_svc
+from broadcaster.rbac import AdminUser, load_current_admin
+
+
+# Re-export for routes that imported require_admin from this module
+# before the RBAC refactor. Will be removed once all admin route
+# files use broadcaster.rbac directly.
+require_admin = load_current_admin
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -64,10 +71,9 @@ def logout(request: Request):
 
 
 @router.get("/me")
-def me(request: Request, _admin_id: int = Depends(require_admin)):
-    row = admin_svc.find_by_id(_admin_id)
-    if row is None:
-        # Session points to a deleted admin; clear and 401.
-        request.session.pop(SESSION_KEY, None)
-        raise HTTPException(status_code=401, detail="admin_not_found")
-    return {"id": row["id"], "username": row["username"]}
+def me(request: Request, _admin: AdminUser = Depends(load_current_admin)):
+    return {
+        "id": _admin.id,
+        "username": _admin.username,
+        "role": _admin.role,
+    }
