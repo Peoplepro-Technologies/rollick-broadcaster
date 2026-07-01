@@ -378,3 +378,106 @@ async def test_role_route_matrix(role, method, path, expected, client):
     assert resp.status_code == expected, (
         f"role={role} {method} {path} got {resp.status_code}, expected {expected}"
     )
+
+
+# ── Task 7: page-handler role gates + nav rendering ────────────
+
+
+PAGE_GATES = [
+    # (role, path, expected_status)
+    ("super_admin",   "/admin/",                  200),
+    ("hr_admin",      "/admin/",                  200),
+    ("content_admin", "/admin/",                  200),
+    ("management",    "/admin/",                  200),
+
+    ("super_admin",   "/admin/users",             200),
+    ("hr_admin",      "/admin/users",             200),
+    ("management",    "/admin/users",             200),
+    ("content_admin", "/admin/users",             403),
+
+    ("super_admin",   "/admin/groups",            200),
+    ("hr_admin",      "/admin/groups",            200),
+    ("content_admin", "/admin/groups",            403),
+    ("management",    "/admin/groups",            403),
+
+    ("super_admin",   "/admin/content",           200),
+    ("content_admin", "/admin/content",           200),
+    ("management",    "/admin/content",           200),
+    ("hr_admin",      "/admin/content",           403),
+
+    ("super_admin",   "/admin/broadcasts",        200),
+    ("hr_admin",      "/admin/broadcasts",        200),
+    ("content_admin", "/admin/broadcasts",        200),
+    ("management",    "/admin/broadcasts",        200),
+
+    ("super_admin",   "/admin/broadcasts/new",    200),
+    ("content_admin", "/admin/broadcasts/new",    200),
+    ("hr_admin",      "/admin/broadcasts/new",    403),
+    ("management",    "/admin/broadcasts/new",    403),
+
+    ("super_admin",   "/admin/comments",          200),
+    ("content_admin", "/admin/comments",          200),
+    ("management",    "/admin/comments",          200),
+    ("hr_admin",      "/admin/comments",          403),
+
+    ("super_admin",   "/admin/settings",          200),
+    ("management",    "/admin/settings",          200),
+    ("hr_admin",      "/admin/settings",          403),
+    ("content_admin", "/admin/settings",          403),
+]
+
+
+@pytest.mark.parametrize("role,path,expected", PAGE_GATES)
+async def test_page_handler_role_gate(role, path, expected, client):
+    """Page-rendering endpoints in app.py must enforce the spec's
+    capability mapping (separate from the JSON API route guards)."""
+    username = f"page_{role}_{abs(hash((role, path))) % 10**8}"
+    await client.post("/api/auth/logout")
+    if role == "super_admin":
+        await _login_as(client, "admin", password="test-admin-pass")
+    else:
+        _seed_admin(username, role)
+        await _login_as(client, username)
+
+    resp = await client.get(path, headers={"Accept": "text/html"})
+    assert resp.status_code == expected, (
+        f"role={role} GET {path} got {resp.status_code}, expected {expected}"
+    )
+
+
+async def test_management_nav_omits_groups_link(client):
+    """Management user lands on /admin/users; the rendered HTML's
+    topbar must NOT include the Groups link."""
+    _seed_admin("mgr_nav", "management")
+    await client.post("/api/auth/logout")
+    await _login_as(client, "mgr_nav")
+    r = await client.get("/admin/users", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    body = r.text
+    assert 'href="/admin/users"' in body
+    assert 'href="/admin/groups"' not in body
+    assert 'href="/admin/content"' in body   # management CAN see content
+    # role is shown in the topbar badge
+    assert "management" in body
+
+
+async def test_content_admin_nav_omits_users_groups(client):
+    """Content admin lands on /admin/broadcasts; no Users or Groups
+    link in the topbar."""
+    _seed_admin("ca_nav", "content_admin")
+    await client.post("/api/auth/logout")
+    await _login_as(client, "ca_nav")
+    r = await client.get("/admin/broadcasts", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    body = r.text
+    assert 'href="/admin/users"' not in body
+    assert 'href="/admin/groups"' not in body
+    assert 'href="/admin/broadcasts"' in body
+
+
+async def test_unauth_redirects_to_login(client):
+    """Without a session, every admin page should 303 to /admin/login."""
+    await client.post("/api/auth/logout")
+    r = await client.get("/admin/users", headers={"Accept": "text/html"})
+    assert r.status_code == 303
+    assert "/admin/login" in r.headers.get("location", "")

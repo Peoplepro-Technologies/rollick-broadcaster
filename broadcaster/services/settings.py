@@ -56,3 +56,34 @@ def runtime_overrides() -> dict[str, str]:
         "whatsapp_access_token": s.whatsapp_access_token,
         "whatsapp_app_secret": s.whatsapp_app_secret,
     }
+
+
+# ── RBAC secret-redaction (2026-07-01 refactor) ─────────────────
+#
+# Management is allowed to GET /admin/settings (read-only) but the
+# template must redact any value whose key is in SECRET_KEYS. Whitelist
+# below is the source of truth for what counts as a secret.
+SECRET_KEYS: frozenset[str] = frozenset({
+    "smtp_pass",
+    "whatsapp_access_token",
+    "whatsapp_app_secret",
+    "session_secret",
+    "ip_hash_pepper",
+    "media_sign_secret",
+})
+
+
+def is_secret(key: str) -> bool:
+    return key in SECRET_KEYS
+
+
+def secret_keys() -> frozenset[str]:
+    """Public accessor — read-only view of the redacted-keys whitelist."""
+    return SECRET_KEYS
+
+
+def keys_with_secret_flag() -> dict[str, bool]:
+    """Annotate every known settings key with whether it is secret."""
+    from broadcaster.settings import _env_settings
+    env = _env_settings().model_dump()
+    return {k: (k in SECRET_KEYS) for k in env}

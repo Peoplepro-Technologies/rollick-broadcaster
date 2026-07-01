@@ -204,6 +204,42 @@ def health() -> dict:
 # Routers are added per-phase. For Phase 0 we ship a minimal login
 # placeholder so the app renders something end-to-end.
 
+def _page_admin(request: Request, *allowed: str):
+    """Gate for Jinja-rendered admin pages.
+
+    Returns ("ok", AdminUser) when the session is valid AND the role
+    is in `allowed`. Returns ("redirect", Response) when there's no
+    valid session; the Response is a 303 to /admin/login. Returns
+    ("forbidden", AdminUser) when the session is valid but the role
+    doesn't match — the caller must render admin/403.html with the
+    `AdminUser` (so the user knows who they are).
+    """
+    from broadcaster.rbac import AdminUser
+    admin_id = admin_auth.current_admin_id(request)
+    if admin_id is None:
+        return ("redirect", RedirectResponse("/admin/login", status_code=303))
+    row = admin_svc.find_by_id(admin_id)
+    if row is None:
+        return ("redirect", RedirectResponse("/admin/login", status_code=303))
+    user = AdminUser(id=row["id"], username=row["username"], role=row["role"])
+    if user.role not in allowed:
+        return ("forbidden", user)
+    return ("ok", user)
+
+
+def _render_403(request: Request, admin, active_nav: str | None = None) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "admin/403.html",
+        {
+            "app_name": get_settings().app_name,
+            "active_nav": active_nav,
+            "current_admin": admin,
+        },
+        status_code=403,
+    )
+
+
 @app.get("/admin/login", response_class=HTMLResponse)
 def admin_login_page(request: Request) -> HTMLResponse:
     error = request.query_params.get("error") == "1"
@@ -216,52 +252,68 @@ def admin_login_page(request: Request) -> HTMLResponse:
 
 @app.get("/admin/", response_class=HTMLResponse)
 def admin_dashboard(request: Request):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "hr_admin", "content_admin", "management")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "dashboard")
+    admin = value
     from broadcaster.services.dashboard import dashboard_overview
     overview = dashboard_overview()
     return templates.TemplateResponse(
         request, "admin/dashboard.html",
         {"app_name": get_settings().app_name, "active_nav": "dashboard",
-         "admin": {"username": "admin"}, "overview": overview},
+         "current_admin": admin, "overview": overview},
     )
 
 
 @app.get("/admin/users", response_class=HTMLResponse)
 def admin_users_page(request: Request):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "hr_admin", "management")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "users")
+    admin = value
     from broadcaster.services import users as users_svc
     users = users_svc.list_users()
     return templates.TemplateResponse(
         request, "admin/users.html",
         {"app_name": get_settings().app_name, "active_nav": "users",
-         "admin": {"username": "admin"}, "users": users},
+         "current_admin": admin, "users": users},
     )
 
 
 @app.get("/admin/groups", response_class=HTMLResponse)
 def admin_groups_page(request: Request):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "hr_admin")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "groups")
+    admin = value
     from broadcaster.services import groups as groups_svc
     return templates.TemplateResponse(
         request, "admin/groups.html",
         {"app_name": get_settings().app_name, "active_nav": "groups",
-         "admin": {"username": "admin"}, "groups": groups_svc.list_groups()},
+         "current_admin": admin, "groups": groups_svc.list_groups()},
     )
 
 
 @app.get("/admin/content", response_class=HTMLResponse)
 def admin_content_page(request: Request):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "content_admin", "management")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "content")
+    admin = value
     from broadcaster.services import content as content_svc
     items = content_svc.list_content()
     return templates.TemplateResponse(
         request, "admin/content.html",
         {"app_name": get_settings().app_name, "active_nav": "content",
-         "admin": {"username": "admin"}, "items": items,
+         "current_admin": admin, "items": items,
          "texts": [c for c in items if c["content_type"] == "text"],
          "media": [c for c in items if c["content_type"] == "media"]},
     )
@@ -269,8 +321,12 @@ def admin_content_page(request: Request):
 
 @app.get("/admin/broadcasts", response_class=HTMLResponse)
 def admin_broadcasts_page(request: Request):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "hr_admin", "content_admin", "management")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "broadcasts")
+    admin = value
     from broadcaster.services import broadcasts as bc_svc
 
     filters, filter_flash = _validate_filters(request.query_params)
@@ -308,7 +364,7 @@ def admin_broadcasts_page(request: Request):
     return templates.TemplateResponse(
         request, "admin/broadcasts_list.html",
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
-         "admin": {"username": "admin"},
+         "current_admin": admin,
          "broadcasts": broadcasts, "counts": counts,
          "applied": applied,
          "category_options": category_options,
@@ -319,15 +375,19 @@ def admin_broadcasts_page(request: Request):
 
 @app.get("/admin/broadcasts/new", response_class=HTMLResponse)
 def admin_broadcast_new_page(request: Request):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "content_admin")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "broadcasts")
+    admin = value
     from broadcaster.services import content as content_svc
     from broadcaster.services import groups as groups_svc
     from broadcaster.services import users as users_svc
     return templates.TemplateResponse(
         request, "admin/broadcast_compose.html",
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
-         "admin": {"username": "admin"},
+         "current_admin": admin,
          "content": content_svc.list_content(),
          "groups": groups_svc.list_groups(),
          "users": users_svc.list_users()},
@@ -336,8 +396,12 @@ def admin_broadcast_new_page(request: Request):
 
 @app.get("/admin/broadcasts/{bid}", response_class=HTMLResponse)
 def admin_broadcast_detail_page(request: Request, bid: int):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "hr_admin", "content_admin", "management")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "broadcasts")
+    admin = value
     from broadcaster.services import broadcasts as bc_svc
     from broadcaster.services import analytics as analytics_svc
     from broadcaster.services import comments as comments_svc
@@ -351,7 +415,7 @@ def admin_broadcast_detail_page(request: Request, bid: int):
     return templates.TemplateResponse(
         request, "admin/broadcast_detail.html",
         {"app_name": get_settings().app_name, "active_nav": "broadcasts",
-         "admin": {"username": "admin"},
+         "current_admin": admin,
          "broadcast": b, "links": bc_svc.list_links(bid),
          "comments": comments_svc.list_for_broadcast(bid, status=None, q=None),
          "analytics": analytics_svc.broadcast_analytics(bid)},
@@ -360,14 +424,18 @@ def admin_broadcast_detail_page(request: Request, bid: int):
 
 @app.get("/admin/comments", response_class=HTMLResponse)
 def admin_comments_page(request: Request, filter: str | None = None):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "content_admin", "management")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "comments")
+    admin = value
     from broadcaster.services import comments as comments_svc
     status = "hidden" if filter == "hidden" else "visible"
     return templates.TemplateResponse(
         request, "admin/comments.html",
         {"app_name": get_settings().app_name, "active_nav": "comments",
-         "admin": {"username": "admin"},
+         "current_admin": admin,
          "comments": comments_svc.list_all(status=status),
          "filter": filter},
     )
@@ -375,16 +443,21 @@ def admin_comments_page(request: Request, filter: str | None = None):
 
 @app.get("/admin/settings", response_class=HTMLResponse)
 def admin_settings_page(request: Request):
-    if admin_auth.current_admin_id(request) is None:
-        return RedirectResponse("/admin/login", status_code=303)
+    state, value = _page_admin(request, "super_admin", "management")
+    if state == "redirect":
+        return value
+    if state == "forbidden":
+        return _render_403(request, value, "settings")
+    admin = value
     from broadcaster.services import settings as settings_svc
     return templates.TemplateResponse(
         request, "admin/settings.html",
         {"app_name": get_settings().app_name, "active_nav": "settings",
-         "admin": {"username": "admin"},
+         "current_admin": admin,
          "settings": settings_svc.all_visible(),
          "runtime": settings_svc.runtime_overrides(),
-         "base_public_url": get_settings().base_public_url},
+         "base_public_url": get_settings().base_public_url,
+         "is_secret_keys": settings_svc.secret_keys()},
     )
 
 

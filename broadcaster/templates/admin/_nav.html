@@ -3,16 +3,37 @@
     <img src="/static/img/logo.png" alt="Rollick">
   </a>
   <nav class="topbar-nav">
+    {# Dashboard: visible to all staff roles. #}
     <a href="/admin/" class="{% if active_nav == 'dashboard' %}active{% endif %}">Dashboard</a>
-    <a href="/admin/users" class="{% if active_nav == 'users' %}active{% endif %}">Users</a>
-    <a href="/admin/groups" class="{% if active_nav == 'groups' %}active{% endif %}">Groups</a>
-    <a href="/admin/content" class="{% if active_nav == 'content' %}active{% endif %}">Content</a>
-    <a href="/admin/broadcasts" class="{% if active_nav == 'broadcasts' %}active{% endif %}">Broadcasts</a>
-    <a href="/admin/comments" class="{% if active_nav == 'comments' %}active{% endif %}">Comments</a>
-    <a href="/admin/settings" class="{% if active_nav == 'settings' %}active{% endif %}">Settings</a>
+    {# Users: super, hr (write), management (read). #}
+    {% if current_admin.role in ('super_admin', 'hr_admin', 'management') %}
+      <a href="/admin/users" class="{% if active_nav == 'users' %}active{% endif %}">Users</a>
+    {% endif %}
+    {# Groups: super + hr only. #}
+    {% if current_admin.role in ('super_admin', 'hr_admin') %}
+      <a href="/admin/groups" class="{% if active_nav == 'groups' %}active{% endif %}">Groups</a>
+    {% endif %}
+    {# Content: super + content + management (read). #}
+    {% if current_admin.role in ('super_admin', 'content_admin', 'management') %}
+      <a href="/admin/content" class="{% if active_nav == 'content' %}active{% endif %}">Content</a>
+    {% endif %}
+    {# Broadcasts: all staff roles can see the list. #}
+    {% if current_admin.role in ('super_admin', 'hr_admin', 'content_admin', 'management') %}
+      <a href="/admin/broadcasts" class="{% if active_nav == 'broadcasts' %}active{% endif %}">Broadcasts</a>
+    {% endif %}
+    {# Comments: super + content (write) + management (read). #}
+    {% if current_admin.role in ('super_admin', 'content_admin', 'management') %}
+      <a href="/admin/comments" class="{% if active_nav == 'comments' %}active{% endif %}">Comments</a>
+    {% endif %}
+    {# Settings: super (everything) + management (read-only w/ redaction). #}
+    {% if current_admin.role in ('super_admin', 'management') %}
+      <a href="/admin/settings" class="{% if active_nav == 'settings' %}active{% endif %}">Settings</a>
+    {% endif %}
   </nav>
   <div class="topbar-actions">
-    <span class="who"><b>{{ admin.username }}</b> · admin</span>
+    <span class="who">
+      <b>{{ current_admin.username }}</b> · {{ current_admin.role }}
+    </span>
     <form method="post" action="/api/auth/logout" style="margin:0;">
       <button type="submit" class="logout">Logout</button>
     </form>
