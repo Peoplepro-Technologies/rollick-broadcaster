@@ -268,3 +268,19 @@ Nav-render assertions:
 ## Open questions
 
 None at design time. Roll forward.
+
+## Status
+
+**Implemented 2026-07-01.** Implementation plan: `docs/superpowers/plans/2026-07-01-admin-panel-ui.md`. Commits on `main`:
+
+```
+cb61877 feat(admin-panel): /admin/admins page handler + topbar nav link
+02a0c04 test(admin-panel): API mirror tests for the JS-driven flow
+b796e1b test(admin-panel): SSR + lockout rendering tests
+```
+
+13 admin-page tests pass (`tests/test_admins_page.py`): 6 SSR (page renders, list, current-admin meta JSON, self-account card, action buttons, add-admin button), 4 API-mirror (create / change-role / change-password / delete), 3 lockout (only-super_admin renders, two-super_admins renders, 409 surfaces).
+
+Zero regressions: 129 tests pass across rbac + auth + viewer + admin-panel tests.
+
+Manual smoke (do this in a browser): open `/admin/admins`, click through Add / Change role / Change password / Delete, verify Generate button, verify lockout behavior (only-super row has disabled Delete).
