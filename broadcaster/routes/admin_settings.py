@@ -1,17 +1,27 @@
-"""Admin settings router — non-secret prefs + SMTP/WhatsApp test buttons."""
+"""Admin settings router — non-secret prefs + SMTP/WhatsApp test buttons.
+
+RBAC:
+  - Read endpoints (DB-overrides + runtime-effective): super_admin and
+    management (management sees the page with secrets redacted in the
+    template layer — secret-redaction lives in Task 8 / template).
+  - Mutating endpoints (update/test-smtp/test-whatsapp): super_admin only.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from broadcaster.routes.admin_auth import require_admin
+from broadcaster.rbac import load_current_admin, require_role
 from broadcaster.services import settings as settings_svc
 from broadcaster.settings import bust_settings_cache, get_settings
+
+READ_ROLES = ("super_admin", "management")
+WRITE_ROLES = ("super_admin",)
 
 router = APIRouter(
     prefix="/api/settings",
     tags=["settings"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(load_current_admin)],
 )
 
 
@@ -26,13 +36,13 @@ FORBIDDEN_KEYS = {
 }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role(*READ_ROLES))])
 def get_settings_db():
     """Return DB-stored settings overrides (non-secret)."""
     return settings_svc.all_visible()
 
 
-@router.get("/runtime")
+@router.get("/runtime", dependencies=[Depends(require_role(*READ_ROLES))])
 def get_runtime_settings():
     """Return effective settings (env + DB overrides) for the UI to
     prefill the SMTP/WhatsApp forms. Returns the actual secret values
@@ -41,7 +51,7 @@ def get_runtime_settings():
     return settings_svc.runtime_overrides()
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def update_settings(payload: dict):
     """Upsert a batch of keys. Rejects any key that looks like a secret.
     After saving, the settings cache is busted so subsequent reads see
@@ -59,7 +69,7 @@ def update_settings(payload: dict):
     return {"saved": saved, "rejected": rejected}
 
 
-@router.post("/test-smtp")
+@router.post("/test-smtp", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def test_smtp():
     """Send a test email to the configured SMTP_FROM address using the
     current env-creds. Returns success/error."""
@@ -90,7 +100,7 @@ def test_smtp():
     raise HTTPException(status_code=500, detail=result.error or "send_failed")
 
 
-@router.post("/test-whatsapp")
+@router.post("/test-whatsapp", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def test_whatsapp():
     """Send a test WhatsApp message to the WHATSAPP_COUNTRY_CODE + a
     test number. Real creds required; otherwise returns a 400 explaining

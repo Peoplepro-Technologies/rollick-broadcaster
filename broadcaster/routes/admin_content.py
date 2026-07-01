@@ -1,25 +1,34 @@
-"""Admin content router — text snippets + media upload + delete."""
+"""Admin content router — text snippets + media upload + delete.
+
+RBAC:
+  - Read endpoints (list/get/serve): super_admin, content_admin, management.
+  - Mutating endpoints (text/media/create/delete): super_admin,
+    content_admin only.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from broadcaster.routes.admin_auth import require_admin
+from broadcaster.rbac import load_current_admin, require_role
 from broadcaster.services import content as content_svc
+
+READ_ROLES = ("super_admin", "content_admin", "management")
+WRITE_ROLES = ("super_admin", "content_admin")
 
 router = APIRouter(
     prefix="/api/content",
     tags=["content"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(load_current_admin)],
 )
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role(*READ_ROLES))])
 def list_content():
     return content_svc.list_content()
 
 
-@router.post("/text")
+@router.post("/text", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def create_text(payload: dict):
     return content_svc.create_text(
         caption=payload.get("caption"),
@@ -27,7 +36,7 @@ def create_text(payload: dict):
     )
 
 
-@router.post("/media")
+@router.post("/media", dependencies=[Depends(require_role(*WRITE_ROLES))])
 async def upload_media(
     file: UploadFile = File(...),
     caption: str | None = Form(default=None),
@@ -35,7 +44,7 @@ async def upload_media(
     return content_svc.create_media(file, caption=caption)
 
 
-@router.get("/{cid}")
+@router.get("/{cid}", dependencies=[Depends(require_role(*READ_ROLES))])
 def get_content(cid: int):
     c = content_svc.get_content(cid)
     if not c:
@@ -43,7 +52,7 @@ def get_content(cid: int):
     return c
 
 
-@router.delete("/{cid}")
+@router.delete("/{cid}", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def delete_content(cid: int):
     if not content_svc.delete_content(cid):
         raise HTTPException(status_code=404, detail="not_found")
@@ -52,7 +61,7 @@ def delete_content(cid: int):
 
 # ── Admin-only file serve ────────────────────────────────────
 
-@router.get("/file/{cid}")
+@router.get("/file/{cid}", dependencies=[Depends(require_role(*READ_ROLES))])
 def serve_media(cid: int):
     """Serve a media file to the admin. Subscribers use /v/{token}/media (Phase 3)."""
     c = content_svc.get_content(cid)

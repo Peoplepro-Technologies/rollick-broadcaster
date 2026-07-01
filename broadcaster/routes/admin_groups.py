@@ -1,15 +1,23 @@
-"""Admin groups router — CRUD + auto-group rebuild + membership."""
+"""Admin groups router — CRUD + auto-group rebuild + membership.
+
+RBAC: super_admin and hr_admin only. Management is read-only across
+the rest of the app but does not see groups (sensitive: contains
+membership, criteria). hr_admin owns users and groups.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from broadcaster.routes.admin_auth import require_admin
+from broadcaster.rbac import load_current_admin, require_role
 from broadcaster.services import groups as groups_svc
 
 router = APIRouter(
     prefix="/api/groups",
     tags=["groups"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[
+        Depends(load_current_admin),
+        Depends(require_role("super_admin", "hr_admin")),
+    ],
 )
 
 

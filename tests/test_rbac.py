@@ -281,3 +281,100 @@ async def test_me_returns_role(client):
     assert body["username"] == "admin"
     assert body["role"] == "super_admin"
     assert "id" in body
+
+
+# ── Task 6: route-sweep matrix ────────────────────────────────
+
+
+async def _login_as(client, username: str, password: str = "test-pass"):
+    """Log in as a non-default admin; seed the row if needed.
+
+    Note: most tests use the conftest's autouse bootstrap which creates
+    'admin'. For other roles we seed an extra user before logging in.
+    """
+    await client.post(
+        "/api/auth/login",
+        data={"username": username, "password": password},
+        headers={"Accept": "application/json"},
+    )
+
+
+def _seed_admin(username: str, role: str, password: str = "test-pass"):
+    """Insert an admin row directly; return row id."""
+    from broadcaster.db import get_db
+    from broadcaster.security import hash_password
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO admins (username, password_hash, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (username, hash_password(password), role, "2026-01-01T00:00:00"),
+        )
+        return cur.lastrowid
+
+
+ROLE_ROUTE_MATRIX = [
+    # (role, method, path, expected_status)
+    # ── users (read)
+    ("hr_admin",      "GET",  "/api/users",             200),
+    ("content_admin", "GET",  "/api/users",             403),
+    ("management",    "GET",  "/api/users",             200),
+    # ── users (write) — POST without body: auth passes for allowed
+    # role then validation fails with 422.
+    ("hr_admin",      "POST", "/api/users",             422),
+    ("management",    "POST", "/api/users",             403),
+    # ── groups (read+write both share role)
+    ("hr_admin",      "GET",  "/api/groups",            200),
+    ("content_admin", "GET",  "/api/groups",            403),
+    ("management",    "GET",  "/api/groups",            403),
+    # ── content (read)
+    ("content_admin", "GET",  "/api/content",           200),
+    ("hr_admin",      "GET",  "/api/content",           403),
+    ("management",    "GET",  "/api/content",           200),
+    # ── content (write)
+    ("content_admin", "POST", "/api/content/text",      422),
+    ("hr_admin",      "POST", "/api/content/text",      403),
+    ("management",    "POST", "/api/content/text",      403),
+    # ── broadcasts (read)
+    ("hr_admin",      "GET",  "/api/broadcasts",        200),
+    ("management",    "GET",  "/api/broadcasts",        200),
+    # ── broadcasts (write)
+    ("content_admin", "POST", "/api/broadcasts",        422),  # body missing, but auth passes
+    ("hr_admin",      "POST", "/api/broadcasts",        403),
+    ("management",    "POST", "/api/broadcasts",        403),
+    # ── comments (read)
+    ("content_admin", "GET",  "/api/comments",          200),
+    ("management",    "GET",  "/api/comments",          200),
+    ("hr_admin",      "GET",  "/api/comments",          403),
+    # ── settings (read)
+    ("super_admin",   "GET",  "/api/settings",          200),
+    ("management",    "GET",  "/api/settings",          200),
+    ("hr_admin",      "GET",  "/api/settings",          403),
+    ("content_admin", "GET",  "/api/settings",          403),
+    # ── settings (write)
+    ("management",    "POST", "/api/settings",          403),
+    ("super_admin",   "GET",  "/api/settings/runtime",  200),
+    ("management",    "GET",  "/api/settings/runtime",  200),
+]
+
+
+@pytest.mark.parametrize("role,method,path,expected", ROLE_ROUTE_MATRIX)
+async def test_role_route_matrix(role, method, path, expected, client):
+    """For each (role, route) cell, asserts the expected HTTP status.
+
+    super_admin (the default bootstrap user 'admin') is the existing
+    fixture; for other roles we seed an extra admin and log in as it.
+    """
+    username = f"{role}_{abs(hash((role, method, path))) % 10**8}"
+
+    await client.post("/api/auth/logout")
+    if role == "super_admin":
+        await _login_as(client, "admin", password="test-admin-pass")
+    else:
+        _seed_admin(username, role)
+        await _login_as(client, username)
+
+    resp = await getattr(client, method.lower())(path)
+    # For 200 we don't care about body shape; just status.
+    assert resp.status_code == expected, (
+        f"role={role} {method} {path} got {resp.status_code}, expected {expected}"
+    )

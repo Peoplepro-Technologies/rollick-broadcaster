@@ -1,4 +1,11 @@
-"""Admin users router — CRUD + Excel import/export + preview."""
+"""Admin users router — CRUD + Excel import/export + preview.
+
+RBAC:
+  - Read endpoints (list/download/template/preview/get): super_admin,
+    hr_admin, management.
+  - Mutating endpoints (create/upload/update/delete): super_admin,
+    hr_admin only — management sees the list but no edit affordance.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -6,7 +13,7 @@ from datetime import datetime
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
-from broadcaster.routes.admin_auth import require_admin
+from broadcaster.rbac import load_current_admin, require_role
 from broadcaster.services import users as users_svc
 
 # Cap upload size so a 1M-row spreadsheet doesn't pin the browser/server.
@@ -14,14 +21,17 @@ from broadcaster.services import users as users_svc
 # (a row is ~100 bytes; 10 MiB ≈ 100k rows).
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
+READ_ROLES = ("super_admin", "hr_admin", "management")
+WRITE_ROLES = ("super_admin", "hr_admin")
+
 router = APIRouter(
     prefix="/api/users",
     tags=["users"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(load_current_admin)],
 )
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role(*READ_ROLES))])
 def list_users(
     active_only: bool = False,
     q: str | None = None,
@@ -31,7 +41,7 @@ def list_users(
     return users_svc.list_users(active_only=active_only, q=q, dept=dept, location=location)
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def create_user(payload: dict):
     name = payload.get("name")
     phone = payload.get("phone")
@@ -47,7 +57,7 @@ def create_user(payload: dict):
     )
 
 
-@router.get("/download")
+@router.get("/download", dependencies=[Depends(require_role(*READ_ROLES))])
 def download():
     """Excel export of the full user list."""
     blob = users_svc.export_to_xlsx()
@@ -58,7 +68,7 @@ def download():
     )
 
 
-@router.get("/template")
+@router.get("/template", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def template():
     """Excel template — blank xlsx with just the header row. Use this to
     bulk-add users without first exporting the live list."""
@@ -70,7 +80,7 @@ def template():
     )
 
 
-@router.post("/upload-excel")
+@router.post("/upload-excel", dependencies=[Depends(require_role(*WRITE_ROLES))])
 async def upload_excel(
     file: UploadFile = File(...),
 ):
@@ -84,7 +94,7 @@ async def upload_excel(
     return users_svc.import_from_xlsx(file)
 
 
-@router.post("/upload-excel/errors.csv")
+@router.post("/upload-excel/errors.csv", dependencies=[Depends(require_role(*WRITE_ROLES))])
 async def upload_excel_errors_csv(payload: dict = Body(...)):
     """Return the same `errors[]` array as RFC-4180 CSV. 400 when empty."""
     errors = payload.get("errors") or []
@@ -99,7 +109,7 @@ async def upload_excel_errors_csv(payload: dict = Body(...)):
     )
 
 
-@router.get("/preview")
+@router.get("/preview", dependencies=[Depends(require_role(*READ_ROLES))])
 def preview(
     q: str | None = None,
     dept: str | None = None,
@@ -111,7 +121,7 @@ def preview(
     return users_svc.list_users(q=q, dept=dept, location=location)
 
 
-@router.get("/{uid}")
+@router.get("/{uid}", dependencies=[Depends(require_role(*READ_ROLES))])
 def get_user(uid: int):
     u = users_svc.get_user(uid)
     if not u:
@@ -119,7 +129,7 @@ def get_user(uid: int):
     return u
 
 
-@router.patch("/{uid}")
+@router.patch("/{uid}", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def update_user(uid: int, payload: dict):
     u = users_svc.update_user(uid, **payload)
     if not u:
@@ -127,7 +137,7 @@ def update_user(uid: int, payload: dict):
     return u
 
 
-@router.delete("/{uid}")
+@router.delete("/{uid}", dependencies=[Depends(require_role(*WRITE_ROLES))])
 def delete_user(uid: int):
     if not users_svc.delete_user(uid):
         raise HTTPException(status_code=404, detail="not_found")
