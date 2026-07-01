@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS admins (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   username      TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'super_admin',
   created_at    TEXT NOT NULL
 );
 """
@@ -175,11 +176,32 @@ def get_db() -> Iterator[sqlite3.Connection]:
 
 
 def init_db() -> None:
-    """Create all tables/indexes if they don't exist. Idempotent."""
+    """Create all tables/indexes if they don't exist. Idempotent.
+
+    Also runs column-level migrations on `admins` (the role column added
+    in 2026-07-01's RBAC refactor). Idempotent on fresh installs.
+    """
     settings = get_settings()
     conn = _connect(settings.database_url)
     try:
         conn.executescript(SCHEMA)
+        _migrate_admins_role(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_admins_role(conn: sqlite3.Connection) -> None:
+    """Ensure `admins.role` exists and no row has a NULL role.
+
+    Fresh installs: column already exists from CREATE TABLE, UPDATE is
+    a no-op (no NULLs).
+    Legacy installs: ADD COLUMN adds role as nullable; UPDATE backfills
+    all rows to super_admin so app code never sees NULL.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(admins)").fetchall()}
+    if "role" not in cols:
+        conn.execute("ALTER TABLE admins ADD COLUMN role TEXT")
+    conn.execute(
+        "UPDATE admins SET role='super_admin' WHERE role IS NULL"
+    )
