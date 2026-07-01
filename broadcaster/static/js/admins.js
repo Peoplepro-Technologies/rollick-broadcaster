@@ -1,13 +1,14 @@
 // /static/js/admins.js — super_admin roster.
 //
 // Pattern mirrors /static/js/users.js. Reads identity from a server-
-// injected <meta name="current-admin"> tag, fetches /api/admins for
-// the table, and uses /api/admins/* for mutations.
+// injected <script type="application/json" id="current-admin"> block,
+// fetches /api/admins for the table, and uses /api/admins/* for
+// mutations.
 
 const ADMINS = (() => {
-  const el = document.querySelector('meta[name="current-admin"]');
-  if (!el) throw new Error("current-admin meta not found");
-  return { me: JSON.parse(el.getAttribute('content')) };
+  const el = document.getElementById('current-admin');
+  if (!el) throw new Error("current-admin block not found");
+  return { me: JSON.parse(el.textContent) };
 })();
 
 // ── Utilities ─────────────────────────────────────────────────────────

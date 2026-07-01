@@ -30,15 +30,20 @@ async def test_admins_page_lists_existing_admins(authed_super_admin):
     assert "admin" in body  # the bootstrap super_admin
 
 
-async def test_admins_page_includes_current_admin_meta(authed_super_admin):
-    """The `<meta name='current-admin'>` must carry the JSON identity."""
+async def test_admins_page_includes_current_admin_block(authed_super_admin):
+    """The `<script type="application/json" id="current-admin">` block
+    must carry the JSON identity (raw text via .textContent — no HTML
+    escaping). Used by /static/js/admins.js on load."""
     r = await authed_super_admin.get("/admin/admins", headers={"Accept": "text/html"})
     body = r.text
-    assert 'name="current-admin"' in body
-    # Content is wrapped in single quotes; capture ends at the next `'`.
-    m = re.search(r"""<meta\s+name=['"]current-admin['"]\s+content='([^']+)'""", body)
+    assert 'id="current-admin"' in body
+    # Capture the text inside the script tag.
+    m = re.search(
+        r"""<script[^>]+id=["']current-admin["'][^>]*>([^<]+)</script>""",
+        body,
+    )
     assert m is not None, body
-    parsed = _json.loads(m.group(1).replace("&quot;", '"').replace("&#34;", '"'))
+    parsed = _json.loads(m.group(1))
     assert parsed["username"] == "admin"
     assert parsed["role"] == "super_admin"
     assert parsed["id"] >= 1

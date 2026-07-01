@@ -3,7 +3,12 @@
 {% block body_class %}app-shell{% endblock %}
 
 {% block head_extra %}
-  <meta name="current-admin" content='{{ current_admin_json }}'>
+  {# Identity block. <script type="application/json"> gives raw text via
+     .textContent without HTML attribute escaping; <meta content='…'>
+     would mangle the JSON because Jinja auto-escapes the attribute
+     value (turning " into &quot;) and JSON.parse would then throw at
+     script-load time. #}
+  <script type="application/json" id="current-admin">{{ current_admin_json | safe }}</script>
 {% endblock %}
 
 {% block body %}
