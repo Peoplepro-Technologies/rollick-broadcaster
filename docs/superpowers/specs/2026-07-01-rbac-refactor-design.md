@@ -330,3 +330,21 @@ Cases:
 ## Open questions
 
 None at design time. Roll forward.
+
+## Status
+
+**Implemented 2026-07-01.** See implementation plan (`docs/superpowers/plans/2026-07-01-rbac-refactor.md`) and the following commits on `main`:
+
+```
+5ccb5e5 feat(rbac): add role column to admins with idempotent in-Python migration
+cbe57e5 feat(rbac): service-layer role ops + last-super-admin lockout
+291fa92 test(auth): bootstrap admin is super_admin
+2294129 feat(rbac): broadcaster/rbac.py — lanes, AdminUser, guard factory
+ed6b8f8 feat(rbac): /api/auth/me returns role
+b03e004 feat(rbac): per-route role guards across all admin modules
+718e094 feat(rbac): page-handler role gates + topbar nav gating
+c57a15e feat(rbac): settings template secret-redaction for non-super_admin
+9ca4b7b feat(rbac): admin-management endpoints + API-level lockout tests
+```
+
+94 RBAC tests pass. Viewer (`/v/{token}`) path preserved verbatim — `tests/test_viewer.py` had zero edits during the refactor.
