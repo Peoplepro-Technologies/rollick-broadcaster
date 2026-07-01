@@ -64,13 +64,15 @@
   <div class="card">
     <div class="card-head">
       <h2>📧 SMTP</h2>
+      {% if current_admin.role == 'super_admin' %}
       <div class="actions">
         <button type="button" class="btn secondary small" onclick="testSmtp()">Send Test Email</button>
       </div>
+      {% endif %}
     </div>
     <p class="muted" style="font-size: 13px; margin-bottom: 18px;">
-      Email delivery config. <b>All fields including the password</b> can be edited here and saved to the database — overrides take effect immediately without restarting.
-      Secrets are stored <b>plain-text in <code>broadcaster.db</code></b>; protect the DB file with OS permissions.
+      Email delivery config. <b>All fields including the password</b>{% if current_admin.role == 'super_admin' %} can be edited here and saved to the database — overrides take effect immediately without restarting{% else %} are visible only to super admins; you see this page in read-only mode with secrets redacted{% endif %}.
+      {% if current_admin.role == 'super_admin' %}Secrets are stored <b>plain-text in <code>broadcaster.db</code></b>; protect the DB file with OS permissions.{% endif %}
     </p>
 
     <form id="smtp-form" onsubmit="submitChannelForm(event, 'smtp')">
@@ -100,31 +102,42 @@
       </div>
       <label class="field">
         <span>SMTP Password <span class="muted">(stored in DB — masked in input)</span></span>
+        {% if current_admin.role == 'super_admin' %}
         <input name="smtp_pass" type="password" value="{{ runtime.smtp_pass }}"
                placeholder="••••••••" autocomplete="off">
+        {% else %}
+        <input type="password" disabled value="••••••" aria-readonly="true">
+        <small class="muted">Redacted for your role.</small>
+        {% endif %}
       </label>
 
       <div id="smtp-error" class="form-error" hidden></div>
       <div id="smtp-success" class="form-success" hidden></div>
 
+      {% if current_admin.role == 'super_admin' %}
       <div class="form-actions">
         <button type="submit" class="btn">Save SMTP</button>
       </div>
+      {% endif %}
     </form>
 
+    {% if current_admin.role == 'super_admin' %}
     <div id="smtp-test-result" class="form-error" hidden style="margin-top: 12px;"></div>
+    {% endif %}
   </div>
 
   <div class="card">
     <div class="card-head">
       <h2>📱 WhatsApp</h2>
+      {% if current_admin.role == 'super_admin' %}
       <div class="actions">
         <button type="button" class="btn secondary small" onclick="testWhatsapp()">Check Credentials</button>
       </div>
+      {% endif %}
     </div>
     <p class="muted" style="font-size: 13px; margin-bottom: 18px;">
-      WhatsApp Business API config. <b>All fields including the access token and app secret</b> can be edited here and saved to the database.
-      Secrets are stored <b>plain-text in <code>broadcaster.db</code></b>; protect the DB file with OS permissions.
+      WhatsApp Business API config. <b>All fields including the access token and app secret</b>{% if current_admin.role == 'super_admin' %} can be edited here and saved to the database{% else %} are visible only to super admins; you see this page in read-only mode with secrets redacted{% endif %}.
+      {% if current_admin.role == 'super_admin' %}Secrets are stored <b>plain-text in <code>broadcaster.db</code></b>; protect the DB file with OS permissions.{% endif %}
     </p>
 
     <form id="wa-form" onsubmit="submitChannelForm(event, 'wa')">
@@ -149,25 +162,39 @@
       <div class="grid-2">
         <label class="field">
           <span>Access Token <span class="muted">(stored in DB — masked in input)</span></span>
+          {% if current_admin.role == 'super_admin' %}
           <input name="whatsapp_access_token" type="password" value="{{ runtime.whatsapp_access_token }}"
                  placeholder="EAAxxxxxxx" autocomplete="off">
+          {% else %}
+          <input type="password" disabled value="••••••" aria-readonly="true">
+          <small class="muted">Redacted for your role.</small>
+          {% endif %}
         </label>
         <label class="field">
           <span>App Secret <span class="muted">(stored in DB — masked in input)</span></span>
+          {% if current_admin.role == 'super_admin' %}
           <input name="whatsapp_app_secret" type="password" value="{{ runtime.whatsapp_app_secret }}"
                  placeholder="••••••••" autocomplete="off">
+          {% else %}
+          <input type="password" disabled value="••••••" aria-readonly="true">
+          <small class="muted">Redacted for your role.</small>
+          {% endif %}
         </label>
       </div>
 
       <div id="wa-error" class="form-error" hidden></div>
       <div id="wa-success" class="form-success" hidden></div>
 
+      {% if current_admin.role == 'super_admin' %}
       <div class="form-actions">
         <button type="submit" class="btn">Save WhatsApp</button>
       </div>
+      {% endif %}
     </form>
 
+    {% if current_admin.role == 'super_admin' %}
     <div id="wa-test-result" class="form-error" hidden style="margin-top: 12px;"></div>
+    {% endif %}
   </div>
 </main>
 {% endblock %}

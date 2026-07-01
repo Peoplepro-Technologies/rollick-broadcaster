@@ -481,3 +481,63 @@ async def test_unauth_redirects_to_login(client):
     r = await client.get("/admin/users", headers={"Accept": "text/html"})
     assert r.status_code == 303
     assert "/admin/login" in r.headers.get("location", "")
+
+
+# ── Task 8: settings secret-redaction ───────────────────────────
+
+
+def test_secret_keys_whitelist():
+    """SECRET_KEYS covers the redaction set declared in the spec."""
+    from broadcaster.services.settings import SECRET_KEYS, secret_keys
+    assert "smtp_pass" in SECRET_KEYS
+    assert "whatsapp_access_token" in SECRET_KEYS
+    assert "whatsapp_app_secret" in SECRET_KEYS
+    # Non-secrets must NOT be flagged.
+    assert "smtp_host" not in SECRET_KEYS
+    assert "smtp_from" not in SECRET_KEYS
+    assert secret_keys() == SECRET_KEYS
+
+
+def test_keys_with_secret_flag_returns_full_mapping():
+    from broadcaster.services.settings import keys_with_secret_flag
+    flagged = keys_with_secret_flag()
+    assert flagged["smtp_pass"] is True
+    assert flagged["smtp_host"] is False
+
+
+async def test_management_settings_redacts_secrets(client, monkeypatch):
+    """When management visits /admin/settings, secret values are NOT
+    rendered; only `••••••` placeholders appear, and no Save buttons."""
+    # Seed a recognizable secret value via a sentinel env var.
+    sentinel = "fakeSecretValueABCDEF_test_only"
+    monkeypatch.setenv("SMTP_PASS", sentinel)
+    from broadcaster.settings import bust_settings_cache
+    bust_settings_cache()
+
+    _seed_admin("mgr_settings", "management")
+    await client.post("/api/auth/logout")
+    await _login_as(client, "mgr_settings")
+    r = await client.get("/admin/settings", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    body = r.text
+    # Actual secret value must not leak.
+    assert sentinel not in body
+    # Page contains "Redacted for your role".
+    assert "Redacted for your role" in body
+    # Save buttons hidden for management.
+    assert ">Save SMTP<" not in body
+    assert ">Save WhatsApp<" not in body
+
+
+async def test_super_admin_sees_real_secrets(client, monkeypatch):
+    """super_admin sees the actual smtp_pass value (no redaction)."""
+    sentinel = "fakeRealSecretValue_xyz"
+    monkeypatch.setenv("SMTP_PASS", sentinel)
+    from broadcaster.settings import bust_settings_cache
+    bust_settings_cache()
+
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    r = await client.get("/admin/settings", headers={"Accept": "text/html"})
+    assert r.status_code == 200
+    assert sentinel in r.text
