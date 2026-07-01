@@ -165,3 +165,18 @@ def list_admins() -> list[sqlite3.Row]:
             "SELECT id, username, role, created_at FROM admins "
             "ORDER BY created_at, id"
         ).fetchall()
+
+
+def create_admin(*, username: str, password: str, role: str) -> int:
+    """Create a new admin row. Returns the new id.
+
+    Callers must validate role ∈ {super_admin, hr_admin, content_admin,
+    management} and check that username is unique.
+    """
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO admins (username, password_hash, role, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (username, hash_password(password), role, _now()),
+        )
+        return cur.lastrowid

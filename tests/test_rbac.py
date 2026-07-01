@@ -541,3 +541,161 @@ async def test_super_admin_sees_real_secrets(client, monkeypatch):
     r = await client.get("/admin/settings", headers={"Accept": "text/html"})
     assert r.status_code == 200
     assert sentinel in r.text
+
+
+# ── Task 9: API-level lockout guard ────────────────────────────
+
+
+async def test_create_admin_then_demote_works(client):
+    """Super_admin creates another super_admin, then demotes the
+    original — succeeds because two super_admins exist.
+
+    After the demotion, the original 'admin' session is no longer a
+    super_admin. Subsequent admin-management calls from that session
+    return 403 — verify by checking the role via /api/auth/me which
+    doesn't require super_admin.
+    """
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    # Create a 2nd super_admin.
+    r = await client.post(
+        "/api/admins",
+        json={"username": "second", "password": "x", "role": "super_admin"},
+    )
+    assert r.status_code == 200, r.text
+    second_id = r.json()["id"]
+
+    # Now demote the original admin (id=1).
+    r = await client.post(
+        "/api/admins/1/role",
+        json={"role": "hr_admin"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["role"] == "hr_admin"
+
+    # The session now reads hr_admin (we demoted ourselves).
+    r = await client.get("/api/auth/me")
+    assert r.json()["role"] == "hr_admin"
+
+    # The new "second" super_admin still exists in the DB.
+    from broadcaster.services import admin as admin_svc
+    supers = [
+        a for a in admin_svc.list_admins() if a["role"] == "super_admin"
+    ]
+    assert len(supers) == 1
+    assert supers[0]["username"] == "second"
+
+
+async def test_demote_last_super_admin_returns_409(client):
+    """With only one super_admin, demoting it returns HTTP 409 with
+    LastSuperAdminError detail."""
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    r = await client.post(
+        "/api/admins/1/role",
+        json={"role": "hr_admin"},
+    )
+    assert r.status_code == 409
+    assert "last super_admin" in r.json()["detail"].lower()
+
+
+async def test_delete_last_super_admin_returns_409(client):
+    """When the only super_admin tries to delete themselves, the
+    lockout chain is reached. The HTTP layer's self-delete guard
+    returns 400 ('cannot_delete_self') FIRST, which is the
+    intended UX — a self-targeted delete shouldn't reach the
+    lockout check. We prove the lockout fires for a *different*
+    super_admin via service-layer call below."""
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+
+    # Step 1: HTTP attempt to delete self returns 400 (self-guard).
+    r = await client.delete("/api/admins/1")
+    assert r.status_code == 400
+    assert "cannot_delete_self" in r.json()["detail"]
+
+    # Step 2: To exercise the lockout via HTTP, we'd need a 2nd
+    # super_admin to do the deleting — use service layer instead.
+    from broadcaster.services import admin as admin_svc
+    with pytest.raises(admin_svc.LastSuperAdminError):
+        admin_svc.delete_admin(1)
+
+
+async def test_non_super_admin_cannot_manage_admins(client):
+    """hr_admin has zero access to /api/admins/*."""
+    _seed_admin("hr1", "hr_admin")
+    await client.post("/api/auth/logout")
+    await _login_as(client, "hr1")
+    r = await client.get("/api/admins")
+    assert r.status_code == 403
+    r = await client.post(
+        "/api/admins",
+        json={"username": "x", "password": "x", "role": "hr_admin"},
+    )
+    assert r.status_code == 403
+    r = await client.post("/api/admins/1/role", json={"role": "hr_admin"})
+    assert r.status_code == 403
+
+
+async def test_self_deletion_rejected(client):
+    """super_admin cannot delete themselves via /api/admins/{self}."""
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    r = await client.delete("/api/admins/1")
+    # First-line guard: cannot_delete_self (400). If we removed that
+    # guard, the lockout would fire and return 409 — both are fine.
+    assert r.status_code in (400, 409)
+
+
+async def test_change_other_admin_password_requires_super_admin(client):
+    """hr_admin cannot change another admin's password via /api/admins."""
+    _seed_admin("hr1", "hr_admin")
+    await client.post("/api/auth/logout")
+    await _login_as(client, "hr1")
+    r = await client.post(
+        "/api/admins/1/password", json={"password": "evil"},
+    )
+    assert r.status_code == 403
+
+
+async def test_invalid_role_rejected(client):
+    """POST /api/admins rejects unknown role names."""
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    r = await client.post(
+        "/api/admins",
+        json={"username": "x", "password": "x", "role": "god_mode"},
+    )
+    assert r.status_code == 400
+
+
+async def test_duplicate_username_rejected(client):
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    r = await client.post(
+        "/api/admins",
+        json={"username": "admin", "password": "x", "role": "hr_admin"},
+    )
+    assert r.status_code == 409
+
+
+async def test_login_works_for_newly_created_admin(client):
+    """End-to-end: super_admin creates hr_admin, logs out, the new
+    user logs in successfully."""
+    await client.post("/api/auth/logout")
+    await _login_as(client, "admin", password="test-admin-pass")
+    r = await client.post(
+        "/api/admins",
+        json={"username": "new_hr", "password": "fresh-pass", "role": "hr_admin"},
+    )
+    assert r.status_code == 200
+    await client.post("/api/auth/logout")
+    r = await client.post(
+        "/api/auth/login",
+        data={"username": "new_hr", "password": "fresh-pass"},
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 200
+    # Sanity: their role is hr_admin.
+    r = await client.get("/api/auth/me")
+    assert r.json()["role"] == "hr_admin"
