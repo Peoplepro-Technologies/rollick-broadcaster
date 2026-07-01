@@ -214,3 +214,51 @@ def test_bootstrap_writes_super_admin_role(isolated_admin_db):
     with get_db() as conn:
         row = conn.execute("SELECT role FROM admins").fetchone()
     assert row["role"] == "super_admin"
+
+
+# ── Task 4: broadcaster/rbac.py module ────────────────────────
+
+
+def test_role_lanes_keys():
+    from broadcaster.rbac import ROLE_LANES
+    assert set(ROLE_LANES.keys()) == {
+        "super_admin", "hr_admin", "content_admin", "management",
+    }
+
+
+def test_role_rank_ordering():
+    from broadcaster.rbac import ROLE_RANK
+    assert ROLE_RANK["super_admin"] > ROLE_RANK["hr_admin"]
+    assert ROLE_RANK["hr_admin"] > ROLE_RANK["content_admin"]
+    assert ROLE_RANK["content_admin"] > ROLE_RANK["management"]
+
+
+def test_admin_user_dataclass():
+    from broadcaster.rbac import AdminUser
+    u = AdminUser(id=1, username="x", role="hr_admin")
+    assert u.id == 1
+    assert u.username == "x"
+    assert u.role == "hr_admin"
+    # Frozen.
+    with pytest.raises(Exception):
+        u.role = "super_admin"  # type: ignore[misc]
+
+
+def test_load_current_admin_401_when_no_session(isolated_admin_db):
+    """Without a session cookie, the dependency raises 401."""
+    from starlette.requests import Request
+
+    from broadcaster.rbac import load_current_admin
+
+    class _FakeReq:
+        session: dict = {}
+
+        def __init__(self):
+            pass
+
+    req = _FakeReq()
+    req.session = {}
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        load_current_admin(req)
+    assert exc.value.status_code == 401
