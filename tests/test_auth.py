@@ -11,9 +11,12 @@ async def test_bootstrap_creates_default_admin(app):
     """Lifespan should have created one admin from env credentials."""
     from broadcaster.db import get_db
     with get_db() as conn:
-        rows = conn.execute("SELECT username FROM admins").fetchall()
+        rows = conn.execute(
+            "SELECT username, role FROM admins"
+        ).fetchall()
     assert len(rows) == 1
     assert rows[0]["username"] == "admin"
+    assert rows[0]["role"] == "super_admin"
 
 
 async def test_login_with_valid_credentials_sets_session(client):
