@@ -64,3 +64,58 @@ async def test_admins_page_table_has_action_buttons(authed_super_admin):
 async def test_admins_page_has_add_admin_button(authed_super_admin):
     r = await authed_super_admin.get("/admin/admins", headers={"Accept": "text/html"})
     assert "+ Add admin" in r.text
+
+
+# ── API mirror tests for the JS-driven flow ────────────────────────
+
+
+async def test_create_admin_via_api(authed_super_admin):
+    """The JS calls POST /api/admins on form submit; verify the
+    endpoint behaves as the JS expects."""
+    r = await authed_super_admin.post(
+        "/api/admins",
+        json={"username": "page_hr", "password": "abcd1234", "role": "hr_admin"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["username"] == "page_hr"
+    assert body["role"] == "hr_admin"
+
+
+async def test_change_role_via_api(authed_super_admin):
+    """JS calls POST /api/admins/{id}/role on the Change role form."""
+    r = await authed_super_admin.post(
+        "/api/admins",
+        json={"username": "role_target", "password": "abcd1234", "role": "hr_admin"},
+    )
+    aid = r.json()["id"]
+    r = await authed_super_admin.post(
+        f"/api/admins/{aid}/role", json={"role": "content_admin"},
+    )
+    assert r.status_code == 200
+    assert r.json()["role"] == "content_admin"
+
+
+async def test_change_password_via_api(authed_super_admin):
+    r = await authed_super_admin.post(
+        "/api/admins",
+        json={"username": "pw_target", "password": "first-pass", "role": "hr_admin"},
+    )
+    aid = r.json()["id"]
+    r = await authed_super_admin.post(
+        f"/api/admins/{aid}/password", json={"password": "new-pass-1"},
+    )
+    assert r.status_code == 200
+
+
+async def test_delete_admin_via_api(authed_super_admin):
+    """JS calls DELETE /api/admins/{id} on the Delete form. Create a
+    non-super target and delete it (avoids both self-delete and the
+    last-super_admin lockout)."""
+    r = await authed_super_admin.post(
+        "/api/admins",
+        json={"username": "del_target", "password": "abcd1234", "role": "hr_admin"},
+    )
+    target = r.json()["id"]
+    r = await authed_super_admin.delete(f"/api/admins/{target}")
+    assert r.status_code == 200
