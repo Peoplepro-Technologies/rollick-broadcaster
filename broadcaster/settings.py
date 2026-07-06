@@ -64,12 +64,13 @@ class Settings(BaseSettings):
     whatsapp_country_code: str = "91"
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def _env_settings() -> Settings:
     """Pure env-based settings. Cached so the disk read happens once."""
     return Settings()
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Effective settings: env values overridden by DB-stored prefs.
 
@@ -77,6 +78,12 @@ def get_settings() -> Settings:
     whatsapp_access_token, whatsapp_app_secret, session_secret,
     ip_hash_pepper, media_sign_secret) are rejected at the API layer so
     they never reach the DB — those fields always come from env.
+
+    The whole merged Settings is cached so each request gets a fast
+    object-reference return — no DB read, no Pydantic reconstruction.
+    The settings page calls `bust_settings_cache()` after writes; the
+    app lifespan busts once after startup so any pre-init cached value
+    doesn't outlive a fresh DB.
     """
     base = _env_settings()
     try:
@@ -93,9 +100,11 @@ def get_settings() -> Settings:
 
 
 def bust_settings_cache() -> None:
-    """Clear cached env-based settings so DB overrides take effect.
+    """Clear cached env-based settings + the merged runtime settings so
+    DB overrides take effect.
 
-    Call this from the settings API after writes. The runtime Settings
-    is rebuilt lazily on the next `get_settings()` call.
+    Call this from the settings API after writes, and from the app
+    lifespan after `init_db()` so pre-DB cached values don't leak.
     """
     _env_settings.cache_clear()
+    get_settings.cache_clear()

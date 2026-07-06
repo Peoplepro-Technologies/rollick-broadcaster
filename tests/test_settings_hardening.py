@@ -158,3 +158,42 @@ def test_runtime_overrides_helper_shape():
     for key in ("smtp_host", "smtp_pass", "whatsapp_phone_id",
                 "whatsapp_access_token", "whatsapp_app_secret"):
         assert key in body, f"helper missing key: {key}"
+
+
+# ── Cache behaviour ──────────────────────────────────────────────
+# get_settings() is lru_cache()'d on the merged Settings. Admin writes
+# must invalidate so live updates take effect without a server restart.
+
+async def test_settings_cache_picks_up_writes_without_restart(authed_client):
+    """After POST /api/settings writes a value, the next get_settings()
+    call MUST return the merged result without any cache poisoning.
+
+    Uses link_token_ttl_days — a real Settings field — since some DB
+    keys (like app_brand_name) are stored but never applied to the
+    Settings model."""
+    from broadcaster.settings import bust_settings_cache, get_settings
+
+    bust_settings_cache()
+    before = get_settings().link_token_ttl_days
+
+    r = await authed_client.post("/api/settings", json={"link_token_ttl_days": "42"})
+    assert r.status_code == 200
+
+    # The route's bust_settings_cache() must clear the cache so this
+    # returns the freshly-written value, not the old cached one.
+    after = get_settings().link_token_ttl_days
+    assert after == 42
+    assert after != before or before == 42  # cover both branches
+
+
+def test_bust_settings_cache_clears_both_layers():
+    """bust_settings_cache() must clear the env cache AND the merged
+    runtime cache — otherwise DB overrides written before cache would
+    never surface through get_settings()."""
+    from broadcaster.settings import _env_settings, bust_settings_cache, get_settings
+    get_settings()  # warm
+    assert _env_settings.cache_info().currsize >= 1
+    assert get_settings.cache_info().currsize >= 1
+    bust_settings_cache()
+    assert _env_settings.cache_info().currsize == 0
+    assert get_settings.cache_info().currsize == 0

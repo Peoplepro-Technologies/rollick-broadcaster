@@ -204,6 +204,38 @@ async def test_viewer_requires_no_auth(authed_client, client):
 
 # ── Graceful handling when the underlying file is gone ─────
 
+# ── Text snippets ─────────────────────────────────────────────
+
+async def test_viewer_renders_text_snippet_without_media_unavailable(authed_client, client):
+    """A broadcast attached to a text snippet (no media file at all)
+    must NOT show the 'Media unavailable' notice. That branch fires
+    only when a media file is genuinely missing from disk."""
+    tr = await authed_client.post("/api/content/text", json={
+        "caption": "Office Closed Friday",
+        "body": "Heads up — the office will be closed this Friday for maintenance.",
+    })
+    assert tr.status_code == 200, tr.text
+    cid = tr.json()["id"]
+    token, _, _ = await _make_user_and_broadcast(authed_client, content_id=cid)
+    r = await client.get(f"/v/{token}")
+    assert r.status_code == 200
+    assert "Media unavailable" not in r.text
+    assert "media-missing" not in r.text
+    assert "Heads up — the office will be closed this Friday" in r.text
+
+
+async def test_viewer_text_snippet_does_not_render_media_tags(authed_client, client):
+    tr = await authed_client.post("/api/content/text", json={
+        "caption": "Greet", "body": "Hello subscribers.",
+    })
+    cid = tr.json()["id"]
+    token, _, _ = await _make_user_and_broadcast(authed_client, content_id=cid)
+    r = await client.get(f"/v/{token}")
+    assert "<video" not in r.text
+    assert "<img " not in r.text and "<img\n" not in r.text
+    assert "<audio" not in r.text
+
+
 async def test_viewer_skips_video_when_file_missing(authed_client, client, tmp_path, monkeypatch):
     """If the content row exists in DB but the underlying file vanished
     (volume reset, manual cleanup, etc.), the viewer must NOT render a

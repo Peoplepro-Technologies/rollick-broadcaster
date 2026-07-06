@@ -46,6 +46,16 @@
         Please contact the sender to re-upload.
       </p>
     </section>
+    {% elif text_body %}
+    {# Text-snippet broadcast — no media file, content lives in
+       `content_data`. Render the snippet's caption as the heading
+       and the body, preserving line breaks. #}
+    <section class="text-block card">
+      {% if text_caption %}
+        <h2 class="text-block-caption">{{ text_caption }}</h2>
+      {% endif %}
+      <div class="text-block-body" style="white-space: pre-wrap;">{{ text_body }}</div>
+    </section>
     {% endif %}
 
     {% if link.message_text %}

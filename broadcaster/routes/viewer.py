@@ -74,27 +74,46 @@ def viewer_page(request: Request, token: str):
     referrer = request.headers.get("referer")
     views_svc.record_view(link["id"], ip=ip, ua=ua, referrer=referrer)
 
-    # Fetch media metadata if a content_id is attached. Even if a row
-    # exists in `content`, the underlying file may be missing (volume
-    # reset, manual cleanup, etc.) — detect that here so the template
-    # doesn't render a broken video player and the user gets a clear
-    # "media unavailable" notice instead of the browser's cryptic
-    # "No video with supported format and MIME type found".
+    # Fetch content metadata if a content_id is attached. Two distinct
+    # shapes live in `content`:
+    #   - content_type='media' → content_data is an absolute filesystem path
+    #     to the uploaded file. Even if the row exists, the file may be
+    #     gone (volume reset, manual cleanup) — detect that here so the
+    #     template doesn't render a broken <video> and the user gets the
+    #     "Media unavailable" notice instead of the browser's cryptic
+    #     "No video with supported format and MIME type found".
+    #   - content_type='text'  → content_data IS the message body (no
+    #     file on disk). The file-existence check must NOT run for
+    #     this branch, otherwise every text snippet is misreported as
+    #     missing media.
     media = None
     media_unavailable = False
+    text_body: str | None = None
+    text_caption: str | None = None
     if link.get("content_id"):
         with get_db() as conn:
             row = conn.execute(
-                "SELECT id, file_name, mime_type, content_data FROM content WHERE id = ?",
+                "SELECT id, content_type, caption, file_name, mime_type, content_data "
+                "FROM content WHERE id = ?",
                 (link["content_id"],),
             ).fetchone()
         if row:
             from broadcaster.services.content import _resolve_content_path
-            file_path = _resolve_content_path(row["content_data"])
-            if file_path.exists():
-                media = dict(row)
-            else:
-                media_unavailable = True
+            ctype = row["content_type"]
+            if ctype == "media":
+                file_path = _resolve_content_path(row["content_data"])
+                if file_path.exists():
+                    media = {
+                        "id": row["id"],
+                        "file_name": row["file_name"],
+                        "mime_type": row["mime_type"],
+                    }
+                else:
+                    media_unavailable = True
+            elif ctype == "text":
+                text_body = row["content_data"]
+                text_caption = row["caption"]
+            # Unknown / future content types: render nothing (silently).
 
     # Comments list (read-only for v1; Phase 5 wires the form)
     with get_db() as conn:
@@ -111,6 +130,8 @@ def viewer_page(request: Request, token: str):
             "link": link,
             "media": media,
             "media_unavailable": media_unavailable,
+            "text_body": text_body,
+            "text_caption": text_caption,
             "comments": comments,
             "comment_count": len(comments),
             "base_public_url": get_settings().base_public_url,
