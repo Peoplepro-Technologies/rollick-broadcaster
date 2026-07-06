@@ -161,39 +161,83 @@ def test_runtime_overrides_helper_shape():
 
 
 # ── Cache behaviour ──────────────────────────────────────────────
-# get_settings() is lru_cache()'d on the merged Settings. Admin writes
-# must invalidate so live updates take effect without a server restart.
+# get_settings() is intentionally NOT cached (the env half IS — see
+# `_env_settings`). Admin writes must be visible immediately, so the
+# merged function rebuilds on every call. This is cheap because
+# `_env_settings` is cached, so each call is one DB read + one Pydantic
+# build — well under a millisecond. Earlier this returned a stale
+# value after admin writes because the merged result was cached and the
+# cache wasn't being invalidated in time; uncaching it eliminates the
+# class of bug entirely.
 
-async def test_settings_cache_picks_up_writes_without_restart(authed_client):
+async def test_settings_picks_up_writes_without_restart(authed_client):
     """After POST /api/settings writes a value, the next get_settings()
-    call MUST return the merged result without any cache poisoning.
+    call MUST return the merged result (env + DB) without any cache
+    poisoning.
 
     Uses link_token_ttl_days — a real Settings field — since some DB
     keys (like app_brand_name) are stored but never applied to the
     Settings model."""
-    from broadcaster.settings import bust_settings_cache, get_settings
+    from broadcaster.settings import get_settings
 
-    bust_settings_cache()
     before = get_settings().link_token_ttl_days
 
     r = await authed_client.post("/api/settings", json={"link_token_ttl_days": "42"})
     assert r.status_code == 200
 
-    # The route's bust_settings_cache() must clear the cache so this
-    # returns the freshly-written value, not the old cached one.
     after = get_settings().link_token_ttl_days
     assert after == 42
     assert after != before or before == 42  # cover both branches
 
 
-def test_bust_settings_cache_clears_both_layers():
-    """bust_settings_cache() must clear the env cache AND the merged
-    runtime cache — otherwise DB overrides written before cache would
-    never surface through get_settings()."""
-    from broadcaster.settings import _env_settings, bust_settings_cache, get_settings
-    get_settings()  # warm
+def test_bust_settings_cache_clears_all_three_layers():
+    """bust_settings_cache() must clear all three cache layers:
+    `_env_settings`, `_db_overrides`, and the merged `get_settings`.
+    Otherwise an admin write would leave a stale override visible
+    through `get_settings()`.
+    """
+    from broadcaster.settings import (
+        _env_settings, _db_overrides, bust_settings_cache, get_settings,
+    )
+    _env_settings()           # warm
+    _db_overrides()           # warm
+    get_settings()            # warm
     assert _env_settings.cache_info().currsize >= 1
+    assert _db_overrides.cache_info().currsize >= 1
     assert get_settings.cache_info().currsize >= 1
     bust_settings_cache()
     assert _env_settings.cache_info().currsize == 0
+    assert _db_overrides.cache_info().currsize == 0
     assert get_settings.cache_info().currsize == 0
+
+
+# ── SMTP/WA persistence through /api/settings/runtime ───────────
+# This is the regression test for the "SMTP setting not being saved"
+# bug: the runtime endpoint must show the freshly-written value, not
+# the env value it was booted with.
+
+async def test_smtp_value_persists_in_runtime_after_write(authed_client, monkeypatch):
+    """Regression: POSTing a new smtp_user must show up in the next
+    /api/settings/runtime call (the form's prefill source)."""
+    from broadcaster.settings import bust_settings_cache, get_settings
+
+    # Set a known env value so we can prove the runtime view picks up
+    # the DB override rather than the env value.
+    monkeypatch.setenv("SMTP_USER", "env_smtp_user@x.com")
+    bust_settings_cache()  # rebuild env cache with the new value
+
+    # Baseline (env value, no DB row).
+    r = await authed_client.get("/api/settings/runtime")
+    assert r.json()["smtp_user"] == "env_smtp_user@x.com"
+
+    # Write a new value.
+    r = await authed_client.post("/api/settings", json={"smtp_user": "db_smtp_user@x.com"})
+    assert r.status_code == 200
+    assert r.json()["saved"] == 1
+
+    # Runtime must reflect the new value, NOT the env value.
+    r = await authed_client.get("/api/settings/runtime")
+    assert r.json()["smtp_user"] == "db_smtp_user@x.com"
+
+    # And the merged Settings must agree.
+    assert get_settings().smtp_user == "db_smtp_user@x.com"

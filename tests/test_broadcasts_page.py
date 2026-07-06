@@ -331,3 +331,60 @@ async def test_search_q_combines_with_category(authed_client):
         })
     listed = bc_svc.list_broadcasts(q="alpha", category="Promotions")
     assert {b["title"] for b in listed} == {"alpha news"}
+
+
+# ── /admin/broadcasts/new — search boxes for groups + users ──────
+# The compose form renders a `<input type="search" class="filter-input">`
+# above each of the two multi-select fieldsets. The vanilla-JS handler
+# (inline in broadcast_compose.html) filters the visible `<label>` rows
+# by case-insensitive substring against a pre-rendered
+# `data-filter-text` attribute on each row. We test the HTML contract
+# here (the data attributes are present and correct); a browser test
+# would be needed to exercise the JS.
+
+async def test_compose_form_renders_search_inputs_for_groups_and_users(authed_client):
+    """The compose page must expose one search input per multi-select
+    list, each linked to its target list by a stable id, and each
+    filterable row must carry the searchable text in `data-filter-text`
+    so the JS can hide non-matches without re-rendering. The live
+    "X of Y" count + the "no matches" placeholder are also part of
+    the contract — they make the search's effect visible."""
+    from broadcaster.services import groups as groups_svc
+    g1 = groups_svc.create_manual_group("Engineering", "manual", "")
+    g2 = groups_svc.create_manual_group("Marketing", "manual", "")
+    u1, u2 = await _make_users(authed_client, ("Alice Kumar", "7411111111", "", ""),
+                                            ("Bob Smith",   "7422222222", "", ""))
+
+    r = await authed_client.get("/admin/broadcasts/new")
+    assert r.status_code == 200
+
+    # Both search inputs are present and wired to the right list.
+    assert 'data-filter-target="groups-list"' in r.text
+    assert 'data-filter-target="users-list"' in r.text
+    assert 'id="groups-list"' in r.text
+    assert 'id="users-list"' in r.text
+
+    # Every list row carries the searchable text. The group label
+    # includes the member count in `data-filter-text` too, so typing
+    # "(3)" would also narrow the list.
+    for needle in ("engineering", "marketing", "alice kumar", "7411111111", "bob smith"):
+        assert needle in r.text.lower(), f"missing {needle!r} in compose form"
+
+    # The "no matches" placeholder exists but is hidden by default;
+    # the JS toggles it on when the search has zero matches.
+    assert 'data-filter-empty' in r.text
+    # Two HTML elements (one per list) + one JS selector reference.
+    assert r.text.count('data-filter-empty') >= 2
+
+    # Live count is rendered for each list ("N of N" before any search).
+    assert 'data-filter-count-for="groups-list"' in r.text
+    assert 'data-filter-count-for="users-list"' in r.text
+    assert '2 of 2' in r.text  # 2 groups, 2 users
+    assert '0 of 0' not in r.text  # never rendered with zero total
+
+    # The selection values are still wired correctly — search must not
+    # break the form submission contract.
+    assert f'value="{g1["id"]}"' in r.text
+    assert f'value="{g2["id"]}"' in r.text
+    assert f'value="{u1}"' in r.text
+    assert f'value="{u2}"' in r.text

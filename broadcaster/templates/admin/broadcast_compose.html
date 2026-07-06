@@ -64,15 +64,26 @@
           <input type="checkbox" name="all_groups" value="1">
           <span>All groups <small>(target every group)</small></span>
         </label>
-        <div class="multi-select">
+        <div class="filter-row" style="display:flex; gap:8px; align-items:center; margin-bottom: 8px;">
+          <input type="search" class="search-input filter-input" style="margin: 0; flex: 1;"
+                 data-filter-target="groups-list"
+                 placeholder="🔍 Search groups…"
+                 aria-label="Filter groups"
+                 autocomplete="off">
+          <span class="filter-count muted" data-filter-count-for="groups-list"
+                style="font-size: 13px; white-space: nowrap;">{{ groups | length }} of {{ groups | length }}</span>
+        </div>
+        <div class="multi-select" id="groups-list" data-filter-list>
           {% for g in groups %}
-          <label class="check">
+          <label class="check" data-filter-item data-filter-text="{{ g.name | lower }} {{ g.member_count }}">
             <input type="checkbox" name="group_ids" value="{{ g.id }}">
             <span>{{ g.name }} <small>({{ g.member_count }})</small></span>
           </label>
           {% else %}
           <p class="muted">No groups yet. <a href="/admin/groups">Create or rebuild groups</a> first.</p>
           {% endfor %}
+          <p class="muted filter-empty" data-filter-empty hidden
+             style="padding: 8px; text-align: center; font-style: italic;">No groups match your search.</p>
         </div>
       </fieldset>
 
@@ -82,13 +93,24 @@
           <input type="checkbox" name="all_users" value="1">
           <span>All users <small>(target every user)</small></span>
         </label>
-        <div class="multi-select" style="max-height: 200px; overflow-y: auto;">
+        <div class="filter-row" style="display:flex; gap:8px; align-items:center; margin-bottom: 8px;">
+          <input type="search" class="search-input filter-input" style="margin: 0; flex: 1;"
+                 data-filter-target="users-list"
+                 placeholder="🔍 Search by name or phone…"
+                 aria-label="Filter users"
+                 autocomplete="off">
+          <span class="filter-count muted" data-filter-count-for="users-list"
+                style="font-size: 13px; white-space: nowrap;">{{ users | length }} of {{ users | length }}</span>
+        </div>
+        <div class="multi-select" id="users-list" data-filter-list style="max-height: 200px; overflow-y: auto;">
           {% for u in users %}
-          <label class="check">
+          <label class="check" data-filter-item data-filter-text="{{ u.name | lower }} {{ u.phone | lower }}">
             <input type="checkbox" name="user_ids" value="{{ u.id }}">
             <span>{{ u.name }} — {{ u.phone }}</span>
           </label>
           {% endfor %}
+          <p class="muted filter-empty" data-filter-empty hidden
+             style="padding: 8px; text-align: center; font-style: italic;">No users match your search.</p>
         </div>
       </fieldset>
 
@@ -215,6 +237,56 @@ import { initSchedulePicker } from "/static/js/schedule.js";
 
 const block = document.querySelector(".when-block");
 if (block) initSchedulePicker(block, {});
+</script>
+
+<script>
+// Filter groups/users as the admin types in the search box. Case-
+// insensitive substring on the pre-rendered `data-filter-text`; works
+// for any fieldset that contains a [data-filter-input] and a sibling
+// [data-filter-list] with [data-filter-item] children. The matching
+// count updates live in [data-filter-count-for=...] so the admin sees
+// the effect of their search immediately.
+(function () {
+  const inputs = document.querySelectorAll('.filter-input[data-filter-target]');
+  inputs.forEach((input) => {
+    const listId = input.dataset.filterTarget;
+    const list = document.getElementById(listId);
+    if (!list) return;
+    const items = list.querySelectorAll('[data-filter-item]');
+    const empty = list.querySelector('[data-filter-empty]');
+    const count = document.querySelector(`[data-filter-count-for="${listId}"]`);
+    const total = items.length;
+
+    function apply() {
+      const q = input.value.trim().toLowerCase();
+      let visible = 0;
+      items.forEach((it) => {
+        const text = it.getAttribute('data-filter-text') || '';
+        const match = !q || text.includes(q);
+        it.hidden = !match;
+        if (match) visible++;
+      });
+      if (empty) empty.hidden = !(q !== '' && visible === 0);
+      if (count) {
+        count.textContent = q
+          ? `${visible} of ${total}`
+          : `${total} of ${total}`;
+        // Dim the count when nothing matches — strong visual signal.
+        count.style.color = (q && visible === 0) ? 'var(--danger)' : '';
+        count.style.fontWeight = (q && visible === 0) ? '600' : '';
+      }
+    }
+    input.addEventListener('input', apply);
+    // Clear on Esc.
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && input.value) {
+        input.value = '';
+        apply();
+        ev.preventDefault();
+      }
+    });
+  });
+})();
 </script>
 
 <script>

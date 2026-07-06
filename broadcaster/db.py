@@ -162,9 +162,14 @@ def _connect(db_path: str) -> sqlite3.Connection:
 
 @contextmanager
 def get_db() -> Iterator[sqlite3.Connection]:
-    """Context manager: yields a connection, commits on success, rolls back on error."""
-    settings = get_settings()
-    conn = _connect(settings.database_url)
+    """Context manager: yields a connection, commits on success, rolls back on error.
+
+    Uses the env-only `_env_settings()` to resolve the database path.
+    Going through the merged `get_settings()` would recurse: the
+    settings table itself is read through `get_db()`.
+    """
+    from broadcaster.settings import _env_settings
+    conn = _connect(_env_settings().database_url)
     try:
         yield conn
         conn.commit()
