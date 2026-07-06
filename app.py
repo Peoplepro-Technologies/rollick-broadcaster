@@ -179,6 +179,7 @@ def _to_ist(s: str | None) -> str:
 
 
 templates.env.globals["_status_pill_class"] = _status_pill_class
+templates.env.globals["version"] = __version__
 templates.env.filters["to_ist"] = _to_ist
 
 app.include_router(admin_auth.router)
