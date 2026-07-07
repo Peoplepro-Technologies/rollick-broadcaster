@@ -121,7 +121,7 @@
       <table class="table">
         <thead>
           <tr>
-            <th>When</th><th>Recipient</th><th>Author tag</th>
+            <th>When</th><th>Author tag</th>
             <th>Comment</th><th>Status</th>
           </tr>
         </thead>
@@ -131,10 +131,6 @@
             <td style="white-space:nowrap; font-size:12px; color:var(--muted);" title="{{ c.created_at }}">
               {{ c.created_at[:16] }}
             </td>
-            <td>
-              <b>{{ c.user_name }}</b><br>
-              <span style="font-size:12px; color:var(--muted);">{{ c.user_phone }}</span>
-            </td>
             <td><code style="font-size:12px;">{{ c.author_hint }}</code></td>
             <td style="white-space:pre-wrap; word-break:break-word;">{{ c.body }}</td>
             <td>
@@ -143,7 +139,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="5" class="empty">No comments yet. As recipients reply on their viewer pages, they'll show up here.</td></tr>
+          <tr><td colspan="4" class="empty">No comments yet. As recipients reply on their viewer pages, they'll show up here.</td></tr>
           {% endfor %}
         </tbody>
       </table>

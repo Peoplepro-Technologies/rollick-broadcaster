@@ -63,9 +63,11 @@
         </thead>
         <tbody id="users-tbody">
           {% for u in users %}
+          {% set phone = u.phone or '' %}
+          {% if phone|length >= 7 %}{% set phone_display = phone[:2] ~ '****' ~ phone[-4:] %}{% else %}{% set phone_display = phone %}{% endif %}
           <tr data-search="{{ (u.name ~ ' ' ~ u.phone ~ ' ' ~ (u.email or ''))|lower }}">
             <td>{{ u.name }}</td>
-            <td>{{ u.phone }}</td>
+            <td>{{ phone_display }}</td>
             <td>{{ u.email or '' }}</td>
             <td>{{ u.department or '' }}</td>
             <td>{{ u.location or '' }}</td>

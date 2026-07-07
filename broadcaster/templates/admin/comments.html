@@ -29,7 +29,7 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Body</th><th>Broadcast</th><th>User</th>
+            <th>Body</th><th>Broadcast</th>
             <th>Posted</th><th>Status</th><th></th>
           </tr>
         </thead>
@@ -40,7 +40,6 @@
             <td>
               <a href="/admin/broadcasts/{{ c.broadcast_id }}">{{ c.broadcast_title }}</a>
             </td>
-            <td>{{ c.user_name }}<br><small style="color:var(--muted)">{{ c.user_phone }}</small></td>
             <td style="font-size: 12px; color: var(--muted);">{{ c.created_at[:16].replace('T', ' ') }}</td>
             <td>
               {% if c.status == 'visible' %}<span class="pill success">Visible</span>
@@ -56,7 +55,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="6" class="empty">No comments{% if filter == 'hidden' %} are hidden{% else %} yet{% endif %}.</td></tr>
+          <tr><td colspan="5" class="empty">No comments{% if filter == 'hidden' %} are hidden{% else %} yet{% endif %}.</td></tr>
           {% endfor %}
         </tbody>
       </table>

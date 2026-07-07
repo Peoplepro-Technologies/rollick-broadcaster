@@ -227,7 +227,8 @@ def list_broadcasts(status: Optional[str] = None, with_links: Optional[bool] = N
         "SELECT b.id, b.title, b.category, b.delivery_channel, b.status, b.scheduled_at, "
         "b.sent_at, b.created_at, b.generate_links, "
         "(SELECT COUNT(*) FROM broadcast_links WHERE broadcast_id = b.id) AS link_count, "
-        "(SELECT COUNT(*) FROM broadcast_targets WHERE broadcast_id = b.id) AS target_count "
+        "(SELECT COUNT(*) FROM broadcast_targets WHERE broadcast_id = b.id) AS target_count, "
+        "(SELECT COUNT(*) FROM comments WHERE broadcast_id = b.id) AS comment_count "
         "FROM broadcasts b"
     )
     if where:

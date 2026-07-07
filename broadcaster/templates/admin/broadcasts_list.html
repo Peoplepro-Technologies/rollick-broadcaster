@@ -141,6 +141,7 @@
           <tr>
             <th>Title</th><th>Category</th><th>Channel</th>
             <th>Targets</th><th>Links</th><th>Status</th>
+            <th>No of Comments</th>
             <th>Scheduled</th><th></th>
           </tr>
         </thead>
@@ -159,6 +160,7 @@
               {% elif b.status == 'cancelled' %}<span class="pill danger">Cancelled</span>
               {% else %}<span class="pill warning">{{ b.status }}</span>{% endif %}
             </td>
+            <td>{{ b.comment_count or 0 }}</td>
             <td class="scheduled-cell" data-scheduled-at="{{ b.scheduled_at or '' }}">
               <span class="muted">…</span>
             </td>
@@ -167,7 +169,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="8" class="empty">No broadcasts yet. <a href="/admin/broadcasts/new">Create your first one</a>.</td></tr>
+          <tr><td colspan="9" class="empty">No broadcasts yet. <a href="/admin/broadcasts/new">Create your first one</a>.</td></tr>
           {% endfor %}
         </tbody>
       </table>
