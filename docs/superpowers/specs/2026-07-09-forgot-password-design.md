@@ -44,9 +44,18 @@ The flow uses a **temporary password** (not a reset link) so the request doesn't
 
 A single new key in the existing `settings` K/V:
 
-| key | default | editable by |
+| key | default (seeded) | editable by |
 |---|---|---|
-| `password_recovery_email` | `""` | super_admin / management on `/admin/settings` |
+| `password_recovery_email` | `anibandha.mukhopadhyay@rollick.co.in` | super_admin on `/admin/settings` |
+
+The default is **seeded on first run** by `init_db` via `INSERT OR IGNORE`:
+
+```python
+conn.execute(
+    "INSERT OR IGNORE INTO settings (key, value) VALUES "
+    "('password_recovery_email', 'anibandha.mukhopadhyay@rollick.co.in')"
+)
+```
 
 This is **not** in `SECRET_KEYS` (broadcaster/services/settings.py:66) — it's a routing address, not a credential.
 
@@ -329,6 +338,6 @@ New file `tests/test_password_reset.py`:
 
 1. **Redirect mechanism in FastAPI**: `HTTPException(303, headers={"Location": ...})` doesn't trigger a browser redirect from `load_current_admin` because the dependency raises before the response is built. The cleaner option is a small `Starlette` middleware or to check the flag at the top of every page-handler instead of in the global dep. Implementation will pick the cleaner of the two during plan-writing.
 
-2. **Settings page editability for management**: management is currently allowed read-only access to `/admin/settings` (per RBAC refactor). Should management be allowed to edit `password_recovery_email` or is it super_admin-only? **Default proposed: super_admin-only**, since changing the recovery mailbox is a security-sensitive action; management only views it. The plan-writing step will surface this for confirmation.
+2. **Settings page editability for management**: management is currently allowed read-only access to `/admin/settings` (per RBAC refactor). **Default proposed: super_admin-only** for editing `password_recovery_email`, since changing the recovery mailbox is a security-sensitive action; management only views it. The plan-writing step will surface this for confirmation.
 
 3. **Bootstrap safety**: if no admin exists yet (fresh install), the bootstrap flow creates one from env. The bootstrap admin must not be created with `must_change_password=1` — it defaults to `0`. No change needed to `bootstrap_admin`.
