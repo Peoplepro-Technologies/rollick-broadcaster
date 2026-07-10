@@ -143,11 +143,12 @@ CREATE TABLE IF NOT EXISTS settings (
 
 -- ── Admin users ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admins (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  username      TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'super_admin',
-  created_at    TEXT NOT NULL
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  username             TEXT NOT NULL UNIQUE,
+  password_hash        TEXT NOT NULL,
+  role                 TEXT NOT NULL DEFAULT 'super_admin',
+  created_at           TEXT NOT NULL,
+  must_change_password INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -180,17 +181,30 @@ def get_db() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+# Default recovery mailbox — seeded on first run so fresh installs ship
+# with a usable password-recovery destination. Editable from
+# /admin/settings (super_admin only).
+DEFAULT_PASSWORD_RECOVERY_EMAIL = "anibandha.mukhopadhyay@rollick.co.in"
+
+
 def init_db() -> None:
     """Create all tables/indexes if they don't exist. Idempotent.
 
     Also runs column-level migrations on `admins` (the role column added
-    in 2026-07-01's RBAC refactor). Idempotent on fresh installs.
+    in 2026-07-01's RBAC refactor; the must_change_password flag added
+    in 2026-07-09's forgot-password flow). Idempotent on fresh installs.
+
+    Seeds a default value into the `password_recovery_email` setting so
+    a fresh install ships with a usable recovery destination without
+    requiring the operator to first open /admin/settings.
     """
     settings = get_settings()
     conn = _connect(settings.database_url)
     try:
         conn.executescript(SCHEMA)
         _migrate_admins_role(conn)
+        _migrate_admins_must_change(conn)
+        _seed_default_settings(conn)
         conn.commit()
     finally:
         conn.close()
@@ -209,4 +223,30 @@ def _migrate_admins_role(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE admins ADD COLUMN role TEXT")
     conn.execute(
         "UPDATE admins SET role='super_admin' WHERE role IS NULL"
+    )
+
+
+def _migrate_admins_must_change(conn: sqlite3.Connection) -> None:
+    """Ensure `admins.must_change_password` exists with default 0.
+
+    Same pattern as `_migrate_admins_role`: ADD COLUMN for legacy
+    installs; fresh installs already have it via CREATE TABLE.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(admins)").fetchall()}
+    if "must_change_password" not in cols:
+        conn.execute(
+            "ALTER TABLE admins ADD COLUMN must_change_password "
+            "INTEGER NOT NULL DEFAULT 0"
+        )
+
+
+def _seed_default_settings(conn: sqlite3.Connection) -> None:
+    """Insert a default value for any non-secret setting that should
+    exist on first run. Uses INSERT OR IGNORE so operator edits to the
+    setting (e.g. via /admin/settings) are preserved across restarts.
+    """
+    conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES "
+        "('password_recovery_email', ?)",
+        (DEFAULT_PASSWORD_RECOVERY_EMAIL,),
     )

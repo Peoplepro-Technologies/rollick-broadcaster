@@ -68,7 +68,8 @@ def bootstrap_admin() -> None:
 def find_by_username(username: str) -> Optional[sqlite3.Row]:
     with get_db() as conn:
         return conn.execute(
-            "SELECT id, username, password_hash, role, created_at "
+            "SELECT id, username, password_hash, role, created_at, "
+            "must_change_password "
             "FROM admins WHERE username = ?",
             (username,),
         ).fetchone()
@@ -77,7 +78,8 @@ def find_by_username(username: str) -> Optional[sqlite3.Row]:
 def find_by_id(admin_id: int) -> Optional[sqlite3.Row]:
     with get_db() as conn:
         return conn.execute(
-            "SELECT id, username, password_hash, role, created_at "
+            "SELECT id, username, password_hash, role, created_at, "
+            "must_change_password "
             "FROM admins WHERE id = ?",
             (admin_id,),
         ).fetchone()
@@ -155,6 +157,19 @@ def change_password(*, admin_id: int, new_password: str) -> None:
         conn.execute(
             "UPDATE admins SET password_hash = ? WHERE id = ?",
             (hash_password(new_password), admin_id),
+        )
+
+
+def set_must_change_password(admin_id: int, value: bool) -> None:
+    """Mark (or unmark) an admin as needing a password change on next
+    sign-in. Used by the forgot-password flow after generating a
+    temporary password; cleared by /api/auth/change-password once the
+    admin sets a permanent one.
+    """
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE admins SET must_change_password = ? WHERE id = ?",
+            (1 if value else 0, admin_id),
         )
 
 

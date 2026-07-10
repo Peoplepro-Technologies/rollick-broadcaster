@@ -128,6 +128,54 @@
 
   <div class="card">
     <div class="card-head">
+      <h2>🔑 Password recovery</h2>
+      {% if current_admin.role == 'super_admin' %}
+      <div class="actions">
+        <button type="button" class="btn secondary small" onclick="testRecovery()">Test recovery mailbox</button>
+      </div>
+      {% endif %}
+    </div>
+    <p class="muted" style="font-size: 13px; margin-bottom: 18px;">
+      When an admin clicks <b>Forgot password</b> on the sign-in screen, a fresh
+      temporary password is emailed to this address. Whoever monitors the
+      mailbox relays the new password out-of-band back to the requesting admin.
+      {% if current_admin.role != 'super_admin' %}
+      You see this field in read-only mode because it controls who receives
+      password-reset emails.
+      {% endif %}
+    </p>
+
+    <form id="recovery-form" onsubmit="submitRecovery(event)">
+      <label class="field">
+        <span>Recovery mailbox</span>
+        {% if current_admin.role == 'super_admin' %}
+        <input name="password_recovery_email" type="email"
+               value="{{ settings.get('password_recovery_email', '') }}"
+               placeholder="it-support@rollick.co.in" required>
+        {% else %}
+        <input type="email" disabled
+               value="{{ settings.get('password_recovery_email', '') }}"
+               aria-readonly="true">
+        {% endif %}
+      </label>
+
+      <div id="recovery-error" class="form-error" hidden></div>
+      <div id="recovery-success" class="form-success" hidden></div>
+
+      {% if current_admin.role == 'super_admin' %}
+      <div class="form-actions">
+        <button type="submit" class="btn">Save recovery mailbox</button>
+      </div>
+      {% endif %}
+    </form>
+
+    {% if current_admin.role == 'super_admin' %}
+    <div id="recovery-test-result" class="form-error" hidden style="margin-top: 12px;"></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
       <h2>📱 WhatsApp</h2>
       {% if current_admin.role == 'super_admin' %}
       <div class="actions">
@@ -252,6 +300,27 @@ async function testSmtp() {
   if (r.ok) {
     el.className = 'form-success';
     el.textContent = 'Test email sent. Check your inbox.';
+  } else {
+    const b = await r.json().catch(() => ({}));
+    el.className = 'form-error';
+    el.textContent = b.detail || `Error ${r.status}`;
+  }
+}
+
+async function submitRecovery(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const payload = {password_recovery_email: fd.get('password_recovery_email')};
+  await postSettings(payload, 'recovery-error', 'recovery-success');
+}
+
+async function testRecovery() {
+  const r = await fetch('/api/settings/test-recovery-mailbox', { method: 'POST' });
+  const el = document.getElementById('recovery-test-result');
+  el.hidden = false;
+  if (r.ok) {
+    el.className = 'form-success';
+    el.textContent = 'Recovery mailbox ping sent. Check that inbox.';
   } else {
     const b = await r.json().catch(() => ({}));
     el.className = 'form-error';

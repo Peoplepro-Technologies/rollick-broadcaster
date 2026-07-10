@@ -121,3 +121,40 @@ def test_whatsapp():
         {"ok": False, "detail": "test_send_requires_recipient; configure via a broadcast instead"},
         status_code=400,
     )
+
+
+@router.post("/test-recovery-mailbox",
+             dependencies=[Depends(require_role(*WRITE_ROLES))])
+def test_recovery_mailbox():
+    """Send a one-line ping to the configured `password_recovery_email`
+    setting so super_admins can verify the routing address without
+    triggering an actual password reset.
+    """
+    from broadcaster.services import settings as _settings_svc
+    from broadcaster.services.email import EmailSender
+    from broadcaster.services.senders import Message
+    from broadcaster.settings import get_settings
+    s = get_settings()
+    if not (s.smtp_host and s.smtp_from):
+        raise HTTPException(status_code=400, detail="smtp_not_configured")
+    recovery = (_settings_svc.get("password_recovery_email") or "").strip()
+    if not recovery:
+        raise HTTPException(status_code=400, detail="recovery_mailbox_not_configured")
+    result = EmailSender().send(Message(
+        channel="email",
+        recipient=recovery,
+        subject="Rollick Broadcaster — recovery mailbox test",
+        body=(
+            "Test ping from Rollick Broadcaster.\n\n"
+            "If you received this, the password recovery mailbox is "
+            "configured correctly.\n"
+            f"Routing address: {recovery}"
+        ),
+        viewer_link="",
+        broadcast_id=0,
+        user_id=0,
+        link_id=0,
+    ))
+    if result.ok:
+        return {"ok": True, "provider_id": result.provider_id}
+    raise HTTPException(status_code=500, detail=result.error or "send_failed")

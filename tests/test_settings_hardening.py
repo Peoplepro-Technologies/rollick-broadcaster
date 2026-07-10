@@ -21,9 +21,19 @@ async def authed_client(client):
 # ── Settings K/V ─────────────────────────────────────────────
 
 async def test_get_settings_empty(authed_client):
+    """A fresh DB has the seeded `password_recovery_email` default
+    (init_db INSERT OR IGNORE) but no operator overrides. The empty-
+    state contract is "no operator-set keys", which we check by
+    filtering out the seed default rather than asserting {}."""
+    from broadcaster.db import DEFAULT_PASSWORD_RECOVERY_EMAIL
     r = await authed_client.get("/api/settings")
     assert r.status_code == 200
-    assert r.json() == {}
+    body = r.json()
+    body.pop("password_recovery_email", None)
+    assert body == {}
+    # And confirm the seed is present and matches the default.
+    r2 = await authed_client.get("/api/settings")
+    assert r2.json().get("password_recovery_email") == DEFAULT_PASSWORD_RECOVERY_EMAIL
 
 
 async def test_set_and_get_settings(authed_client):

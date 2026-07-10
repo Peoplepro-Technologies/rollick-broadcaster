@@ -193,6 +193,12 @@ app.include_router(admins.router)
 viewer.set_templates(templates)
 app.include_router(viewer.router)
 
+# Wire the MustChangePassword → 303 redirect translation. Done here
+# (not in admin_auth.py) so the exception class can be imported
+# without circular gymnastics.
+from broadcaster.rbac import install_forced_change_redirect  # noqa: E402
+install_forced_change_redirect(app)
+
 
 # ── Public routes ───────────────────────────────────────────────
 
@@ -220,14 +226,26 @@ def _page_admin(request: Request, *allowed: str):
     ("forbidden", AdminUser) when the session is valid but the role
     doesn't match — the caller must render admin/403.html with the
     `AdminUser` (so the user knows who they are).
+
+    If the admin has `must_change_password=1` (signed in with a temp
+    password) and the current path is NOT in the change-page allowlist,
+    returns ("redirect", 303 → /admin/change-password). The
+    `load_current_admin` dependency in API routers handles the same
+    rule; this duplicates it for the SSR page handlers since they
+    don't go through that dependency.
     """
-    from broadcaster.rbac import AdminUser
+    from broadcaster.rbac import AdminUser, _FORCED_CHANGE_ALLOWLIST
     admin_id = admin_auth.current_admin_id(request)
     if admin_id is None:
         return ("redirect", RedirectResponse("/admin/login", status_code=303))
     row = admin_svc.find_by_id(admin_id)
     if row is None:
         return ("redirect", RedirectResponse("/admin/login", status_code=303))
+    if row["must_change_password"]:
+        path = request.url.path
+        if not (path in _FORCED_CHANGE_ALLOWLIST or path.startswith("/static/")):
+            return ("redirect", RedirectResponse(
+                "/admin/change-password", status_code=303))
     user = AdminUser(id=row["id"], username=row["username"], role=row["role"])
     if user.role not in allowed:
         return ("forbidden", user)
@@ -254,6 +272,44 @@ def admin_login_page(request: Request) -> HTMLResponse:
         request,
         "admin/login.html",
         {"app_name": get_settings().app_name, "active_nav": None, "error": error},
+    )
+
+
+@app.get("/admin/forgot-password", response_class=HTMLResponse)
+def admin_forgot_password_page(request: Request) -> HTMLResponse:
+    """Public page (no auth) — anyone can request a reset, but the
+    resulting temp password is only ever emailed to the configured
+    recovery mailbox, never directly to the requester."""
+    return templates.TemplateResponse(
+        request,
+        "admin/forgot_password.html",
+        {"app_name": get_settings().app_name, "active_nav": None},
+    )
+
+
+@app.get("/admin/change-password", response_class=HTMLResponse)
+def admin_change_password_page(request: Request) -> HTMLResponse:
+    """Forced-change page (no admin nav — the user is either mid-flow
+    after a temp-password sign-in or visiting voluntarily). If there's
+    no session we bounce them to /admin/login first.
+    """
+    from broadcaster.services import admin as _admin_svc
+    admin_id = admin_auth.current_admin_id(request)
+    must_change = False
+    if admin_id is not None:
+        row = _admin_svc.find_by_id(admin_id)
+        if row is not None:
+            must_change = bool(row["must_change_password"])
+        else:
+            # Stale session — bounce to login.
+            return RedirectResponse("/admin/login", status_code=303)
+    else:
+        return RedirectResponse("/admin/login", status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "admin/change_password.html",
+        {"app_name": get_settings().app_name, "active_nav": None,
+         "must_change": must_change},
     )
 
 

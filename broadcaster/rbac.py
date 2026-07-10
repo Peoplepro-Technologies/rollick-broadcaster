@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 
 
 # Public type alias for the four roles. Kept as a plain string union
@@ -52,6 +53,19 @@ ROLE_RANK: dict[str, int] = {
 SESSION_KEY = "admin_id"
 
 
+# Paths that are always allowed when the admin has
+# `must_change_password=1`. Anything else 303-redirects to the change
+# page so a temporary-password holder can't bypass the change.
+_FORCED_CHANGE_ALLOWLIST: frozenset[str] = frozenset({
+    "/admin/change-password",
+    "/api/auth/change-password",
+    "/api/auth/logout",
+    "/admin/login",      # so an admin can sign out by visiting login
+    "/admin/forgot-password",  # and re-request if needed
+    "/api/auth/forgot-password",
+})
+
+
 @dataclass(frozen=True)
 class AdminUser:
     """Lightweight handle on the currently-authenticated admin."""
@@ -65,11 +79,25 @@ class ForbiddenForRole(Exception):
     """Raised internally by require_role; FastAPI translates to 403."""
 
 
+class MustChangePassword(Exception):
+    """Raised by load_current_admin when the admin signed in with a
+    temporary password and hasn't yet set a permanent one.
+
+    The route layer (or any global exception handler) translates this
+    into a 303 redirect to /admin/change-password. We use a dedicated
+    exception rather than raising HTTPException with a Location header
+    because FastAPI doesn't surface response headers attached to
+    HTTPException when the exception is raised from a dependency.
+    """
+
+
 def load_current_admin(request: Request) -> AdminUser:
     """Read the session cookie, fetch the admin row, attach to
     `request.state.current_admin` so templates can read it.
 
-    Raises 401 if no session or admin row not found.
+    Raises 401 if no session or admin row not found. Raises
+    `MustChangePassword` if the admin's `must_change_password` flag is
+    set and the requested path isn't in the change-page allowlist.
     """
     from broadcaster.services import admin as admin_svc
 
@@ -93,6 +121,12 @@ def load_current_admin(request: Request) -> AdminUser:
         role=row["role"],
     )
     request.state.current_admin = user
+
+    if row["must_change_password"]:
+        path = request.url.path
+        if not (path in _FORCED_CHANGE_ALLOWLIST or path.startswith("/static/")):
+            raise MustChangePassword(path)
+
     return user
 
 
@@ -122,3 +156,17 @@ def require_role(*allowed: str):
         return user
 
     return _dep
+
+
+# ── Middleware: convert MustChangePassword into a 303 redirect ──
+# Imported lazily by app.py so circular imports don't bite.
+def install_forced_change_redirect(app) -> None:
+    """Attach a middleware that catches MustChangePassword raised from
+    dependencies and translates it to a 303 redirect to the change
+    page. Without this, FastAPI returns a generic 500.
+    """
+    from starlette.requests import Request as StarletteRequest
+
+    @app.exception_handler(MustChangePassword)
+    async def _redirect_to_change(request: StarletteRequest, exc: MustChangePassword):
+        return RedirectResponse("/admin/change-password", status_code=303)
