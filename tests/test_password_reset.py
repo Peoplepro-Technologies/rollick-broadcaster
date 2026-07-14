@@ -67,25 +67,16 @@ def _patch_email_send(monkeypatch, ok: bool = True, error: str = ""):
 
 
 def _extract_temp_pwd(body: str) -> str:
-    """Pull the 'New temporary password: …' value out of the email body."""
-    m = re.search(r"New temporary password:\s*(\S+)", body)
+    """Pull the temp password out of the email body.
+
+    The body template places the password on its own line between two
+    blank lines, preceded by "A temporary password has been generated:".
+    The regex tolerates any whitespace / newlines between the label and
+    the value so changes to the surrounding format don't break the
+    extractor."""
+    m = re.search(r"A temporary password has been generated:\s*\n\s*(\S+)", body)
     assert m, f"temp pwd not found in body:\n{body}"
     return m.group(1)
-
-
-@pytest.fixture
-def recovery_settings(monkeypatch):
-    """Configure recovery mailbox + SMTP host/from via the settings layer.
-
-    The autouse `monkeypatch` env in conftest leaves SMTP_HOST empty so
-    `smtp_not_configured` is the default error. This fixture populates
-    it for tests that want the happy path.
-    """
-    settings_svc.set_("password_recovery_email", "it-test@rollick.co.in")
-    monkeypatch.setenv("SMTP_HOST", "smtp.test.example")
-    monkeypatch.setenv("SMTP_FROM", "noreply@rollick.co.in")
-    bust_settings_cache()
-    return settings_svc
 
 
 # ── generate_strong_password ────────────────────────────────────
@@ -140,7 +131,9 @@ def test_request_reset_happy_path_mints_password_and_sets_flag(
     assert (ok, detail) == (True, "sent")
     assert sent["to"] == "it-test@rollick.co.in"
     assert "admin" in sent["subject"]
-    assert "New temporary password" in sent["body"]
+    assert "A password recovery request was received" in sent["body"]
+    assert "Username: admin" in sent["body"]
+    assert "Regards,\nSupport Team" in sent["body"]
 
     row_after = admin_svc.find_by_username("admin")
     assert row_after["must_change_password"] == 1
@@ -165,6 +158,68 @@ def test_request_reset_smtp_failure_rolls_back_password(monkeypatch, recovery_se
     # unknown — best we can do is rotate forward and clear the flag).
     assert row_after["password_hash"] != hash_before
     assert sent["calls"] == 1
+
+
+# ── Recipient resolution (per-admin email + global fallback) ────
+
+def test_request_reset_uses_admin_recovery_email(
+        monkeypatch, recovery_settings):
+    """When the admin row carries a recovery_email and the global
+    setting is empty, the temp password routes to the per-admin row."""
+    settings_svc.set_("password_recovery_email", "")
+    bust_settings_cache()
+    admin_id = admin_svc.find_by_username("admin")["id"]
+    admin_svc.set_recovery_email(admin_id, "alice@rollick.co.in")
+
+    sent = _patch_email_send(monkeypatch, ok=True)
+    ok, detail = reset_svc.request_reset("admin")
+    assert (ok, detail) == (True, "sent")
+    assert sent["to"] == "alice@rollick.co.in"
+
+
+def test_request_reset_prefers_admin_over_global(
+        monkeypatch, recovery_settings):
+    """When both the per-admin row and the global setting are set,
+    the per-admin row wins — IT is no longer in the loop."""
+    # recovery_settings already seeded the global; the bootstrap admin's
+    # row has recovery_email='' (DB default). Add a per-admin entry to
+    # force the preferred path.
+    admin_id = admin_svc.find_by_username("admin")["id"]
+    admin_svc.set_recovery_email(admin_id, "personal@rollick.co.in")
+
+    sent = _patch_email_send(monkeypatch, ok=True)
+    ok, detail = reset_svc.request_reset("admin")
+    assert (ok, detail) == (True, "sent")
+    assert sent["to"] == "personal@rollick.co.in"
+
+
+def test_request_reset_falls_back_to_global_when_admin_empty(
+        monkeypatch, recovery_settings):
+    """When the admin row's recovery_email is empty (legacy backfill,
+    or a row a super_admin hasn't filled in yet), the global setting
+    is used. The bootstrap admin's row has recovery_email='' by default,
+    which is the setup for this test."""
+    # recovery_settings seeds the global; admin row is empty.
+    assert admin_svc.find_by_username("admin")["recovery_email"] == ""
+    sent = _patch_email_send(monkeypatch, ok=True)
+    ok, detail = reset_svc.request_reset("admin")
+    assert (ok, detail) == (True, "sent")
+    assert sent["to"] == "it-test@rollick.co.in"
+
+
+def test_request_reset_no_destinations_returns_config_error(monkeypatch):
+    """When neither the per-admin row nor the global setting has a
+    value, the service returns the existing
+    `recovery_mailbox_not_configured` detail code (no new code needed —
+    the contract is unchanged for this failure mode)."""
+    # Both empty. The autouse fixture zeros SMTP env too; the
+    # mailbox-config error wins because we check it before SMTP.
+    settings_svc.set_("password_recovery_email", "")
+    bust_settings_cache()
+    # Admin row already has recovery_email='' (DEFAULT).
+    assert admin_svc.find_by_username("admin")["recovery_email"] == ""
+    ok, detail = reset_svc.request_reset("admin")
+    assert (ok, detail) == (False, "recovery_mailbox_not_configured")
 
 
 # ── Default seed ────────────────────────────────────────────────

@@ -24,7 +24,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from broadcaster.services import admin as admin_svc
-from broadcaster.services import settings as settings_svc
 from broadcaster.services.email import EmailSender
 from broadcaster.services.senders import Message
 from broadcaster.security import generate_strong_password
@@ -48,8 +47,12 @@ def request_reset(username: str) -> tuple[bool, str]:
     if row is None:
         return (False, "no_such_admin")
 
-    recovery_email = (settings_svc.get("password_recovery_email") or "").strip()
-    if not recovery_email:
+    # Per-admin row wins; fall back to the global setting. The DB-side
+    # sentinel for "no per-admin destination" is the empty string, which
+    # is what the migration backfills legacy rows with — preserving the
+    # pre-2026-07-14 fallback behaviour for existing deployments.
+    recipient = admin_svc.resolve_recovery_email(row)
+    if not recipient:
         return (False, "recovery_mailbox_not_configured")
 
     s = get_settings()
@@ -63,20 +66,28 @@ def request_reset(username: str) -> tuple[bool, str]:
     admin_svc.change_password(admin_id=admin_id, new_password=temp)
     admin_svc.set_must_change_password(admin_id, True)
 
-    iso_now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    iso_now = datetime.now(timezone.utc)
+    # "14 July 2026, 05:45 UTC" — day, full month name, year, HH:MM UTC.
+    # dt.day avoids the %-d / %#d portability dance (Linux vs Windows);
+    # the rest is plain strftime.
+    request_time = f"{iso_now.day} {iso_now.strftime('%B %Y, %H:%M UTC')}"
     body = (
-        f"A password reset was requested for admin username "
-        f"\"{username}\" at {iso_now} UTC.\n\n"
-        f"New temporary password: {temp}\n\n"
-        f"Relay this password to the requesting admin out-of-band "
-        f"(phone, Teams, etc.). They will be required to set a "
-        f"permanent password on first sign-in.\n\n"
-        f"If you did not expect this request, no action is required."
+        f"A password recovery request was received for the following account:\n\n"
+        f"Username: {username}\n"
+        f"Request Time: {request_time}\n\n"
+        f"A temporary password has been generated:\n\n"
+        f"{temp}\n\n"
+        f"Please use this temporary password to sign in. You will be "
+        f"required to set a new permanent password upon your first sign-in.\n\n"
+        f"For security, do not share this password with anyone.\n\n"
+        f"If you did not request this password recovery, no action is required.\n\n"
+        f"Regards,\n"
+        f"Support Team"
     )
     result = EmailSender().send(Message(
         channel="email",
-        recipient=recovery_email,
-        subject=f"[Rollick] Password reset requested for \"{username}\"",
+        recipient=recipient,
+        subject=f"[Rollick] Password recovery for {username}",
         body=body,
         viewer_link="",
         broadcast_id=0,

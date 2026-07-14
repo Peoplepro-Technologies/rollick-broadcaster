@@ -111,4 +111,6 @@ async def test_admins_html_references_served_admins_js(client):
     )
     r = await client.get("/admin/admins", headers={"Accept": "text/html"})
     assert r.status_code == 200
-    assert 'src="/static/js/admins.js"' in r.text
+    # Versioned script tag — when admins.js changes, bump the ?v=N
+    # here too so browser caches invalidate.
+    assert 'src="/static/js/admins.js?v=' in r.text

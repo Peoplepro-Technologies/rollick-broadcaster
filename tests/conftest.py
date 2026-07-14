@@ -74,3 +74,24 @@ async def client(app):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+# ── Shared fixtures for the password-recovery flow ─────────────────
+# The autouse _isolate_db fixture above zeros SMTP_HOST and SMTP_FROM
+# so the no-config branches of the forgot-password service are the
+# default. Tests that want the happy path enable this fixture; it sets
+# the global recovery mailbox AND the SMTP env vars.
+@pytest.fixture
+def recovery_settings(monkeypatch):
+    """Configure the global recovery mailbox + SMTP env vars.
+
+    Returns the `broadcaster.services.settings` module so tests can call
+    `settings_svc.set_("password_recovery_email", "...")` against it.
+    """
+    from broadcaster.services import settings as settings_svc
+    from broadcaster.settings import bust_settings_cache
+    settings_svc.set_("password_recovery_email", "it-test@rollick.co.in")
+    monkeypatch.setenv("SMTP_HOST", "smtp.test.example")
+    monkeypatch.setenv("SMTP_FROM", "noreply@rollick.co.in")
+    bust_settings_cache()
+    return settings_svc

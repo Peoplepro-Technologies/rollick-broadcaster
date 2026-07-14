@@ -55,15 +55,22 @@ function escapeAttr(s) {
 }
 
 function rowHtml(a) {
+  const recoveryEmail = a.recovery_email
+    ? escapeAttr(a.recovery_email)
+    : '<span class="muted">— (fallback)</span>';
   return `
     <tr data-admin-id="${a.id}" data-admin-role="${a.role}"
-        data-admin-username="${a.username}">
-      <td>${a.username}</td>
+        data-admin-username="${a.username}"
+        data-admin-recovery-email="${escapeAttr(a.recovery_email || '')}">
+      <td>${escapeAttr(a.username)}</td>
       <td><span class="pill ${a.role}">${a.role}</span></td>
+      <td>${recoveryEmail}</td>
       <td>${a.created_at || '—'}</td>
       <td>
         <button class="btn small" onclick="openRoleModal(${a.id}, '${escapeAttr(a.username)}', '${a.role}')">Change role</button>
         <button class="btn small secondary" onclick="openPasswordModal(${a.id}, '${escapeAttr(a.username)}')">Change password</button>
+        <button class="btn small secondary" onclick="openRecoveryEmailModal(${a.id}, '${escapeAttr(a.username)}', '${escapeAttr(a.recovery_email || '')}')">Recovery email</button>
+        <button class="btn small" onclick="openSendRecoveryMailModal(${a.id}, '${escapeAttr(a.username)}', '${escapeAttr(a.recovery_email || '')}')">Send recovery mail</button>
         <button class="btn small danger" onclick="openDeleteModal(${a.id}, '${escapeAttr(a.username)}')">Delete</button>
       </td>
     </tr>
@@ -75,7 +82,7 @@ async function reloadAdminsTable() {
   const tbody = document.getElementById('admins-tbody');
   tbody.innerHTML = list.length
     ? list.map(rowHtml).join('')
-    : '<tr><td colspan="4" class="empty">No admins.</td></tr>';
+    : '<tr><td colspan="5" class="empty">No admins.</td></tr>';
   applyLockoutFlags(list);
 }
 
@@ -133,6 +140,15 @@ function openDeleteModal(adminId, username) {
   document.getElementById('delete-admin-id').value = adminId;
   document.getElementById('delete-username').textContent = username;
   document.getElementById('delete-modal').hidden = false;
+}
+
+function openRecoveryEmailModal(adminId, username, currentEmail) {
+  document.getElementById('recovery-email-admin-id').value = adminId;
+  document.getElementById('recovery-email-username').textContent = username;
+  // Pre-populate so super_admin sees the existing value rather than
+  // starting from a blank form (which they'd then have to retype).
+  document.getElementById('recovery-email-input').value = currentEmail || '';
+  document.getElementById('recovery-email-modal').hidden = false;
 }
 
 function openSelfPasswordModal() {
@@ -242,6 +258,69 @@ async function submitSelfPassword(ev) {
   closeModal('self-pw-modal');
   flashSuccess(document.getElementById('self-pw-success'),
                'Password updated.');
+}
+
+async function submitRecoveryEmail(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const adminId = Number(fd.get('admin_id'));
+  const r = await fetch(`/api/admins/${adminId}/recovery-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recovery_email: fd.get('recovery_email') }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    showError('recovery-email-modal', 'recovery-email-error',
+              body.detail || `Error ${r.status}`);
+    return;
+  }
+  closeModal('recovery-email-modal');
+  await reloadAdminsTable();
+  flashSuccess(document.getElementById('self-pw-success'),
+               'Recovery email updated.');
+}
+
+function openSendRecoveryMailModal(adminId, username, recoveryEmail) {
+  document.getElementById('send-recovery-admin-id').value = adminId;
+  document.getElementById('send-recovery-username').textContent = username;
+  // Show the resolved recipient (the row's per-admin email, or a
+  // fallback notice when empty). The server is the source of truth —
+  // we render the pre-computed string here, and the submission path
+  // will give us the actual recipient the email routed to.
+  const recipientEl = document.getElementById('send-recovery-recipient');
+  if (recoveryEmail) {
+    recipientEl.textContent = recoveryEmail;
+    recipientEl.classList.remove('muted');
+  } else {
+    recipientEl.textContent = '(global fallback — see /admin/settings)';
+    recipientEl.classList.add('muted');
+  }
+  document.getElementById('send-recovery-modal').hidden = false;
+}
+
+async function submitSendRecoveryMail(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const adminId = Number(fd.get('admin_id'));
+  const r = await fetch(`/api/admins/${adminId}/send-recovery-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    showError('send-recovery-modal', 'send-recovery-error',
+              body.detail || `Error ${r.status}`);
+    return;
+  }
+  closeModal('send-recovery-modal');
+  const msg = body.recipient
+    ? `Recovery mail sent to ${body.recipient}.`
+    : 'Recovery mail sent.';
+  flashSuccess(document.getElementById('self-pw-success'), msg);
+  // Force a table reload so the must_change_password flag, if it
+  // changed, is reflected in any UI hooks downstream.
+  await reloadAdminsTable();
 }
 
 // ── Confirm-password pair: enable submit only when both match. ─────────

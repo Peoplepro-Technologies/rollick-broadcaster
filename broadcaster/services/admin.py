@@ -68,8 +68,8 @@ def bootstrap_admin() -> None:
 def find_by_username(username: str) -> Optional[sqlite3.Row]:
     with get_db() as conn:
         return conn.execute(
-            "SELECT id, username, password_hash, role, created_at, "
-            "must_change_password "
+            "SELECT id, username, password_hash, role, recovery_email, "
+            "created_at, must_change_password "
             "FROM admins WHERE username = ?",
             (username,),
         ).fetchone()
@@ -78,8 +78,8 @@ def find_by_username(username: str) -> Optional[sqlite3.Row]:
 def find_by_id(admin_id: int) -> Optional[sqlite3.Row]:
     with get_db() as conn:
         return conn.execute(
-            "SELECT id, username, password_hash, role, created_at, "
-            "must_change_password "
+            "SELECT id, username, password_hash, role, recovery_email, "
+            "created_at, must_change_password "
             "FROM admins WHERE id = ?",
             (admin_id,),
         ).fetchone()
@@ -173,25 +173,71 @@ def set_must_change_password(admin_id: int, value: bool) -> None:
         )
 
 
+def set_recovery_email(admin_id: int, recovery_email: str) -> None:
+    """Set the per-admin recovery email.
+
+    Empty / whitespace-only input raises `ValueError("recovery_email_required")`
+    so the caller can map it to a 400 with `detail="recovery_email_required"`.
+    Use this entry point when the row already exists; callers SHOULD pass
+    a value validated through `validate_email(..., required=True)`.
+    """
+    email = (recovery_email or "").strip()
+    if not email:
+        raise ValueError("recovery_email_required")
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM admins WHERE id = ?", (admin_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"admin {admin_id} not found")
+        conn.execute(
+            "UPDATE admins SET recovery_email = ? WHERE id = ?",
+            (email, admin_id),
+        )
+
+
+def resolve_recovery_email(admin_row: sqlite3.Row) -> str | None:
+    """Recipient for the forgot-password flow.
+
+    Per-admin row wins; falls back to the global `password_recovery_email`
+    setting when the row has no email. Returns `None` when neither is
+    set, so the caller can raise `recovery_mailbox_not_configured`.
+    """
+    per_admin = (admin_row["recovery_email"] or "").strip()
+    if per_admin:
+        return per_admin
+    # Lazy import: broadcaster.services.settings imports broadcaster.db
+    # which imports broadcaster.services.admin at module load.
+    from broadcaster.services import settings as settings_svc
+    global_email = (settings_svc.get("password_recovery_email") or "").strip()
+    return global_email or None
+
+
 def list_admins() -> list[sqlite3.Row]:
     """Return all admins for the admin-management page."""
     with get_db() as conn:
         return conn.execute(
-            "SELECT id, username, role, created_at FROM admins "
+            "SELECT id, username, role, recovery_email, created_at FROM admins "
             "ORDER BY created_at, id"
         ).fetchall()
 
 
-def create_admin(*, username: str, password: str, role: str) -> int:
+def create_admin(
+    *, username: str, password: str, role: str, recovery_email: str = ""
+) -> int:
     """Create a new admin row. Returns the new id.
 
-    Callers must validate role ∈ {super_admin, hr_admin, content_admin,
-    management} and check that username is unique.
+    `recovery_email` defaults to `''` for backward compatibility with
+    legacy callers that pre-date the per-admin recovery flow. New admin
+    creation routes MUST validate it via `validate_email(recovery_email,
+    required=True)` BEFORE calling this function and reject empty input.
     """
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO admins (username, password_hash, role, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (username, hash_password(password), role, _now()),
+            "INSERT INTO admins (username, password_hash, role, "
+            "recovery_email, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (username, hash_password(password), role,
+             (recovery_email or "").strip(), _now()),
         )
         return cur.lastrowid

@@ -585,7 +585,8 @@ async def test_create_admin_then_demote_works(client):
     # Create a 2nd super_admin.
     r = await client.post(
         "/api/admins",
-        json={"username": "second", "password": "x", "role": "super_admin"},
+        json={"username": "second", "password": "x", "role": "super_admin",
+              "recovery_email": "second@rollick.co.in"},
     )
     assert r.status_code == 200, r.text
     second_id = r.json()["id"]
@@ -699,7 +700,8 @@ async def test_duplicate_username_rejected(client):
     await _login_as(client, "admin", password="test-admin-pass")
     r = await client.post(
         "/api/admins",
-        json={"username": "admin", "password": "x", "role": "hr_admin"},
+        json={"username": "admin", "password": "x", "role": "hr_admin",
+              "recovery_email": "admin@rollick.co.in"},
     )
     assert r.status_code == 409
 
@@ -711,7 +713,8 @@ async def test_login_works_for_newly_created_admin(client):
     await _login_as(client, "admin", password="test-admin-pass")
     r = await client.post(
         "/api/admins",
-        json={"username": "new_hr", "password": "fresh-pass", "role": "hr_admin"},
+        json={"username": "new_hr", "password": "fresh-pass", "role": "hr_admin",
+              "recovery_email": "new_hr@rollick.co.in"},
     )
     assert r.status_code == 200
     await client.post("/api/auth/logout")

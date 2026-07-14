@@ -136,18 +136,23 @@
       {% endif %}
     </div>
     <p class="muted" style="font-size: 13px; margin-bottom: 18px;">
-      When an admin clicks <b>Forgot password</b> on the sign-in screen, a fresh
-      temporary password is emailed to this address. Whoever monitors the
-      mailbox relays the new password out-of-band back to the requesting admin.
+      <b>Fallback recovery mailbox</b> — used when an admin row has no
+      per-admin recovery email of its own (legacy accounts created before
+      the per-admin field existed, or rows a super_admin hasn't filled in
+      yet). For each admin, set their personal recovery email on the
+      <a href="/admin/admins"><b>Admins</b></a> page — that takes
+      priority over this fallback. When a forgotten-password flow
+      triggers, the temporary password is emailed to <i>either</i> the
+      per-admin row (preferred) <i>or</i> this fallback.
       {% if current_admin.role != 'super_admin' %}
-      You see this field in read-only mode because it controls who receives
-      password-reset emails.
+      You see this field in read-only mode because it controls who
+      receives password-reset emails.
       {% endif %}
     </p>
 
     <form id="recovery-form" onsubmit="submitRecovery(event)">
       <label class="field">
-        <span>Recovery mailbox</span>
+        <span>Fallback recovery mailbox</span>
         {% if current_admin.role == 'super_admin' %}
         <input name="password_recovery_email" type="email"
                value="{{ settings.get('password_recovery_email', '') }}"
@@ -174,6 +179,7 @@
     {% endif %}
   </div>
 
+  {% if false %}{# AiSensy temporarily hidden — flip to true to re-enable. #}
   <div class="card">
     <div class="card-head">
       <h2>📱 AiSensy <span class="muted" style="font-size: 13px; font-weight: normal;">(preferred WhatsApp provider)</span></h2>
@@ -228,6 +234,7 @@
     <div id="aisensy-test-result" class="form-error" hidden style="margin-top: 12px;"></div>
     {% endif %}
   </div>
+  {% endif %}
 
   <div class="card">
     <div class="card-head">

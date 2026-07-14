@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS admins (
   username             TEXT NOT NULL UNIQUE,
   password_hash        TEXT NOT NULL,
   role                 TEXT NOT NULL DEFAULT 'super_admin',
+  recovery_email       TEXT NOT NULL DEFAULT '',
   created_at           TEXT NOT NULL,
   must_change_password INTEGER NOT NULL DEFAULT 0
 );
@@ -192,7 +193,15 @@ def init_db() -> None:
 
     Also runs column-level migrations on `admins` (the role column added
     in 2026-07-01's RBAC refactor; the must_change_password flag added
-    in 2026-07-09's forgot-password flow). Idempotent on fresh installs.
+    in 2026-07-09's forgot-password flow; the recovery_email column
+    added in 2026-07-14's per-admin password recovery flow). Idempotent
+    on fresh installs.
+
+    Per-admin recovery_email: each admin row carries the email address
+    that admin's forgot-password flow routes the temp password to.
+    An empty string (`''`) means "no personal destination — fall back
+    to the global password_recovery_email setting". Existing rows are
+    backfilled to `''` by the migration.
 
     Seeds a default value into the `password_recovery_email` setting so
     a fresh install ships with a usable recovery destination without
@@ -204,6 +213,7 @@ def init_db() -> None:
         conn.executescript(SCHEMA)
         _migrate_admins_role(conn)
         _migrate_admins_must_change(conn)
+        _migrate_admins_recovery_email(conn)
         _seed_default_settings(conn)
         conn.commit()
     finally:
@@ -237,6 +247,23 @@ def _migrate_admins_must_change(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE admins ADD COLUMN must_change_password "
             "INTEGER NOT NULL DEFAULT 0"
+        )
+
+
+def _migrate_admins_recovery_email(conn: sqlite3.Connection) -> None:
+    """Ensure `admins.recovery_email` exists with default `''`.
+
+    Empty string is the load-bearing sentinel: the forgot-password
+    service uses it as "no per-admin destination, fall back to the
+    global `password_recovery_email` setting". The DEFAULT in the
+    ALTER means legacy rows get backfilled automatically — no second
+    UPDATE pass needed.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(admins)").fetchall()}
+    if "recovery_email" not in cols:
+        conn.execute(
+            "ALTER TABLE admins ADD COLUMN recovery_email "
+            "TEXT NOT NULL DEFAULT ''"
         )
 
 

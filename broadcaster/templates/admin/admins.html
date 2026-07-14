@@ -62,15 +62,23 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Username</th><th>Role</th><th>Created</th><th>Actions</th>
+            <th>Username</th><th>Role</th><th>Recovery email</th><th>Created</th><th>Actions</th>
           </tr>
         </thead>
         <tbody id="admins-tbody">
           {% for a in admins %}
           <tr data-admin-id="{{ a.id }}" data-admin-role="{{ a.role }}"
-              data-admin-username="{{ a.username }}">
+              data-admin-username="{{ a.username }}"
+              data-admin-recovery-email="{{ a.recovery_email or '' }}">
             <td>{{ a.username }}</td>
             <td><span class="pill {{ a.role }}">{{ a.role }}</span></td>
+            <td class="recovery-email-cell">
+              {% if a.recovery_email %}
+                {{ a.recovery_email }}
+              {% else %}
+                <span class="muted">— (fallback)</span>
+              {% endif %}
+            </td>
             <td>{{ a.created_at or '—' }}</td>
             <td>
               <button class="btn small" onclick="openRoleModal({{ a.id }}, '{{ a.username|e }}', '{{ a.role }}')">
@@ -79,13 +87,19 @@
               <button class="btn small secondary" onclick="openPasswordModal({{ a.id }}, '{{ a.username|e }}')">
                 Change password
               </button>
+              <button class="btn small secondary" onclick="openRecoveryEmailModal({{ a.id }}, '{{ a.username|e }}', '{{ a.recovery_email|e }}')">
+                Recovery email
+              </button>
+              <button class="btn small" onclick="openSendRecoveryMailModal({{ a.id }}, '{{ a.username|e }}', '{{ a.recovery_email|e }}')">
+                Send recovery mail
+              </button>
               <button class="btn small danger" onclick="openDeleteModal({{ a.id }}, '{{ a.username|e }}')">
                 Delete
               </button>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="4" class="empty">No admins.</td></tr>
+          <tr><td colspan="5" class="empty">No admins.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -115,6 +129,11 @@
           <option value="content_admin" selected>content_admin</option>
           <option value="management">management</option>
         </select>
+      </label>
+      <label>Recovery email *
+        <small class="muted">(where the temporary password is emailed on forgot-password)</small>
+        <input name="recovery_email" type="email" required
+               placeholder="alice@rollick.co.in" autocomplete="off">
       </label>
       <div id="add-admin-error" class="form-error" hidden></div>
       <div class="modal-actions">
@@ -187,6 +206,56 @@
   </div>
 </div>
 
+{# Recovery email modal (per-row) #}
+<div id="recovery-email-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeModal('recovery-email-modal')">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <h3>Recovery email</h3>
+    <p class="sub">
+      Where the temporary password is emailed when <strong id="recovery-email-username">?</strong>
+      requests a reset. Leave the field at its current value if the admin
+      already has an email set.
+    </p>
+    <form id="recovery-email-form" onsubmit="submitRecoveryEmail(event)">
+      <input type="hidden" name="admin_id" id="recovery-email-admin-id">
+      <label>Recovery email *
+        <input name="recovery_email" id="recovery-email-input" type="email" required
+               placeholder="alice@rollick.co.in" autocomplete="off">
+      </label>
+      <div id="recovery-email-error" class="form-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeModal('recovery-email-modal')">Cancel</button>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Send recovery mail modal (per-row) — super_admin triggers the
+   forgot-password flow on behalf of this admin. The temp password is
+   emailed to the admin's recovery_email (per-row, or global fallback
+   when the row is empty). The admin will be required to set a new
+   permanent password on next sign-in. #}
+<div id="send-recovery-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeModal('send-recovery-modal')">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <h3>Send recovery mail</h3>
+    <p class="sub">
+      Send a fresh temporary password to <strong id="send-recovery-username">?</strong>.
+      They'll be required to set a new permanent password on next sign-in.
+    </p>
+    <p class="sub">
+      <b>Routed to:</b> <span id="send-recovery-recipient" class="muted">?</span>
+    </p>
+    <form id="send-recovery-form" onsubmit="submitSendRecoveryMail(event)">
+      <input type="hidden" name="admin_id" id="send-recovery-admin-id">
+      <div id="send-recovery-error" class="form-error" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" onclick="closeModal('send-recovery-modal')">Cancel</button>
+        <button type="submit" class="btn primary">Send recovery mail</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {# Self password modal #}
 <div id="self-pw-modal" class="modal-backdrop" hidden onclick="if(event.target===this)closeModal('self-pw-modal')">
   <div class="modal-card" onclick="event.stopPropagation()">
@@ -210,5 +279,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/admins.js"></script>
+<script src="/static/js/admins.js?v=15"></script>
 {% endblock %}

@@ -79,7 +79,8 @@ async def test_create_admin_via_api(authed_super_admin):
     endpoint behaves as the JS expects."""
     r = await authed_super_admin.post(
         "/api/admins",
-        json={"username": "page_hr", "password": "abcd1234", "role": "hr_admin"},
+        json={"username": "page_hr", "password": "abcd1234", "role": "hr_admin",
+              "recovery_email": "page_hr@rollick.co.in"},
     )
     assert r.status_code == 200
     body = r.json()
@@ -91,7 +92,8 @@ async def test_change_role_via_api(authed_super_admin):
     """JS calls POST /api/admins/{id}/role on the Change role form."""
     r = await authed_super_admin.post(
         "/api/admins",
-        json={"username": "role_target", "password": "abcd1234", "role": "hr_admin"},
+        json={"username": "role_target", "password": "abcd1234", "role": "hr_admin",
+              "recovery_email": "role_target@rollick.co.in"},
     )
     aid = r.json()["id"]
     r = await authed_super_admin.post(
@@ -104,7 +106,8 @@ async def test_change_role_via_api(authed_super_admin):
 async def test_change_password_via_api(authed_super_admin):
     r = await authed_super_admin.post(
         "/api/admins",
-        json={"username": "pw_target", "password": "first-pass", "role": "hr_admin"},
+        json={"username": "pw_target", "password": "first-pass", "role": "hr_admin",
+              "recovery_email": "pw_target@rollick.co.in"},
     )
     aid = r.json()["id"]
     r = await authed_super_admin.post(
@@ -119,7 +122,8 @@ async def test_delete_admin_via_api(authed_super_admin):
     last-super_admin lockout)."""
     r = await authed_super_admin.post(
         "/api/admins",
-        json={"username": "del_target", "password": "abcd1234", "role": "hr_admin"},
+        json={"username": "del_target", "password": "abcd1234", "role": "hr_admin",
+              "recovery_email": "del_target@rollick.co.in"},
     )
     target = r.json()["id"]
     r = await authed_super_admin.delete(f"/api/admins/{target}")
@@ -169,7 +173,8 @@ async def test_two_super_admins_have_no_lockout_disabled_attr_in_ssr(client):
     )
     await client.post(
         "/api/admins",
-        json={"username": "second_super", "password": "abcd1234", "role": "super_admin"},
+        json={"username": "second_super", "password": "abcd1234", "role": "super_admin",
+              "recovery_email": "second_super@rollick.co.in"},
     )
     r = await client.get("/admin/admins", headers={"Accept": "text/html"})
     assert r.status_code == 200

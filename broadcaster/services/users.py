@@ -60,8 +60,29 @@ def _validate_phone(phone: str) -> str:
     return norm
 
 
-def _validate_email(email: Optional[str]) -> Optional[str]:
-    if email is None or email == "":
+def validate_email(
+    email: Optional[str], *, required: bool = True
+) -> Optional[str]:
+    """Public email format check.
+
+    `required=True` (default) — empty/missing input raises 400 invalid_email;
+    use this when the field is part of the schema contract.
+    `required=False` — empty input returns None; use this for optional fields
+    that quietly skip validation when blank.
+
+    Anything non-empty is checked against EMAIL_RE; the regex is permissive
+    on purpose (no DNS / deliverability check). Mirror this in callers:
+    `validate_email(value, required=True)` for required fields,
+    `validate_email(value, required=False)` for optional ones.
+    """
+    empty = (
+        email is None
+        or email == ""
+        or (isinstance(email, str) and not email.strip())
+    )
+    if empty:
+        if required:
+            raise HTTPException(status_code=400, detail="invalid_email")
         return None
     if not EMAIL_RE.match(email):
         raise HTTPException(status_code=400, detail="invalid_email")
@@ -124,7 +145,7 @@ def create_user(
     if not name or not name.strip():
         raise HTTPException(status_code=400, detail="name_required")
     phone = _validate_phone(phone)
-    email = _validate_email(email)
+    email = validate_email(email, required=False)
 
     with get_db() as conn:
         try:
@@ -152,7 +173,7 @@ def update_user(uid: int, **fields) -> Optional[dict]:
         if k == "phone":
             v = _validate_phone(v)
         if k == "email":
-            v = _validate_email(v)
+            v = validate_email(v, required=False)
         if k == "is_active":
             v = 1 if v else 0
         sets.append(f"{k} = ?")
