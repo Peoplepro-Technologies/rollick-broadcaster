@@ -4,7 +4,7 @@ RBAC:
   - Read endpoints (DB-overrides + runtime-effective): super_admin and
     management (management sees the page with secrets redacted in the
     template layer — secret-redaction lives in Task 8 / template).
-  - Mutating endpoints (update/test-smtp/test-whatsapp): super_admin only.
+  - Mutating endpoints (update/test-smtp/test-whatsapp/test-aisensy): super_admin only.
 """
 from __future__ import annotations
 
@@ -120,6 +120,28 @@ def test_whatsapp():
     return JSONResponse(
         {"ok": False, "detail": "test_send_requires_recipient; configure via a broadcast instead"},
         status_code=400,
+    )
+
+
+@router.post("/test-aisensy", dependencies=[Depends(require_role(*WRITE_ROLES))])
+def test_aisensy():
+    """Verify AiSensy credentials + campaign are configured. Mirrors
+    test-whatsapp: no real recipient available without user input, so
+    we return the same `test_send_requires_recipient` hint."""
+    from broadcaster.settings import get_settings
+    s = get_settings()
+    if not (s.aisensy_api_key and s.aisensy_campaign_name):
+        raise HTTPException(
+            status_code=400,
+            detail="aisensy_not_configured",
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "provider": "aisensy",
+            "campaign": s.aisensy_campaign_name,
+            "detail": "AiSensy credentials are set. Send via a broadcast to exercise the live API.",
+        },
     )
 
 

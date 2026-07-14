@@ -81,6 +81,13 @@ def _whatsapp_creds_set() -> bool:
     return bool(s.whatsapp_phone_id and s.whatsapp_access_token)
 
 
+def _aisensy_creds_set() -> bool:
+    """AiSensy is the preferred WhatsApp provider when both an API key
+    and a default campaign name are configured."""
+    s = get_settings()
+    return bool(s.aisensy_api_key and s.aisensy_campaign_name)
+
+
 def _email_creds_set() -> bool:
     s = get_settings()
     return bool(s.smtp_host and s.smtp_from)
@@ -88,6 +95,9 @@ def _email_creds_set() -> bool:
 
 # Lazy imports so the real senders don't need to be present if unused.
 def get_sender_for(channel: str) -> Sender:
+    if channel == "whatsapp" and _aisensy_creds_set():
+        from broadcaster.services.aisensy import AiSensySender
+        return AiSensySender()
     if channel == "whatsapp" and _whatsapp_creds_set():
         from broadcaster.services.whatsapp import WhatsAppSender
         return WhatsAppSender()

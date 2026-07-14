@@ -55,6 +55,9 @@ def runtime_overrides() -> dict[str, str]:
         "whatsapp_country_code": s.whatsapp_country_code,
         "whatsapp_access_token": s.whatsapp_access_token,
         "whatsapp_app_secret": s.whatsapp_app_secret,
+        "aisensy_api_key": s.aisensy_api_key,
+        "aisensy_campaign_name": s.aisensy_campaign_name,
+        "aisensy_base_url": s.aisensy_base_url,
     }
 
 
@@ -67,6 +70,7 @@ SECRET_KEYS: frozenset[str] = frozenset({
     "smtp_pass",
     "whatsapp_access_token",
     "whatsapp_app_secret",
+    "aisensy_api_key",
     "session_secret",
     "ip_hash_pepper",
     "media_sign_secret",

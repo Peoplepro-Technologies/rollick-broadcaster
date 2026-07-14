@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     whatsapp_api_version: str = "v21.0"
     whatsapp_country_code: str = "91"
 
+    # AiSensy (preferred WhatsApp provider when configured). Only the
+    # API key stays env-only; campaign_name + base_url can be overridden
+    # at runtime from /admin/settings (stored in the settings DB table).
+    aisensy_api_key: str = ""
+    aisensy_campaign_name: str = ""
+    aisensy_base_url: str = "https://backend.aisensy.com/campaign/t1/api/v2"
+
 
 @lru_cache(maxsize=1)
 def _env_settings() -> Settings:

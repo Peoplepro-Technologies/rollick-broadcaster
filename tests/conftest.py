@@ -40,6 +40,8 @@ def _isolate_db(test_db_path: Path, monkeypatch):
     monkeypatch.setenv("SMTP_FROM", "")
     monkeypatch.setenv("WHATSAPP_PHONE_ID", "")
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "")
+    monkeypatch.setenv("AISENSY_API_KEY", "")
+    monkeypatch.setenv("AISENSY_CAMPAIGN_NAME", "")
     # Force re-init since settings are cached.
     from broadcaster.settings import bust_settings_cache
     from broadcaster.db import init_db

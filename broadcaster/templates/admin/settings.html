@@ -176,6 +176,61 @@
 
   <div class="card">
     <div class="card-head">
+      <h2>📱 AiSensy <span class="muted" style="font-size: 13px; font-weight: normal;">(preferred WhatsApp provider)</span></h2>
+      {% if current_admin.role == 'super_admin' %}
+      <div class="actions">
+        <button type="button" class="btn secondary small" onclick="testAisensy()">Check Credentials</button>
+      </div>
+      {% endif %}
+    </div>
+    <p class="muted" style="font-size: 13px; margin-bottom: 18px;">
+      When <b>API Key</b> and <b>Campaign Name</b> are both set, all broadcasts on the
+      WhatsApp channel route through AiSensy instead of Meta's Cloud API directly.
+      {% if current_admin.role == 'super_admin' %}The API key is editable here and stored in the database{% else %}Visible only to super admins; you see this page in read-only mode with secrets redacted{% endif %}.
+      {% if current_admin.role == 'super_admin' %}Secrets are stored <b>plain-text in <code>broadcaster.db</code></b>; protect the DB file with OS permissions.{% endif %}
+    </p>
+
+    <form id="aisensy-form" onsubmit="submitChannelForm(event, 'aisensy')">
+      <label class="field">
+        <span>API Key <span class="muted">(stored in DB — masked in input)</span></span>
+        {% if current_admin.role == 'super_admin' %}
+        <input name="aisensy_api_key" type="password" value="{{ runtime.aisensy_api_key }}"
+               placeholder="••••••••" autocomplete="off">
+        {% else %}
+        <input type="password" disabled value="••••••" aria-readonly="true">
+        <small class="muted">Redacted for your role.</small>
+        {% endif %}
+      </label>
+      <div class="grid-2">
+        <label class="field">
+          <span>Default Campaign Name</span>
+          <input name="aisensy_campaign_name" value="{{ runtime.aisensy_campaign_name }}"
+                 placeholder="my_whatsapp_template">
+        </label>
+        <label class="field">
+          <span>API Base URL</span>
+          <input name="aisensy_base_url" value="{{ runtime.aisensy_base_url }}"
+                 placeholder="https://backend.aisensy.com/campaign/t1/api/v2">
+        </label>
+      </div>
+
+      <div id="aisensy-error" class="form-error" hidden></div>
+      <div id="aisensy-success" class="form-success" hidden></div>
+
+      {% if current_admin.role == 'super_admin' %}
+      <div class="form-actions">
+        <button type="submit" class="btn">Save AiSensy</button>
+      </div>
+      {% endif %}
+    </form>
+
+    {% if current_admin.role == 'super_admin' %}
+    <div id="aisensy-test-result" class="form-error" hidden style="margin-top: 12px;"></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
       <h2>📱 WhatsApp</h2>
       {% if current_admin.role == 'super_admin' %}
       <div class="actions">
@@ -257,8 +312,8 @@ async function submitSettings(ev) {
   await postSettings(payload, 'settings-error', 'settings-success');
 }
 
-// Generic submit for the channel forms. `which` is 'smtp' or 'wa' — used
-// to pick the right error/success banner IDs.
+// Generic submit for the channel forms. `which` is 'smtp' | 'wa' | 'aisensy' —
+// used to pick the right error/success banner IDs.
 async function submitChannelForm(ev, which) {
   ev.preventDefault();
   const fd = new FormData(ev.target);
@@ -334,6 +389,21 @@ async function testWhatsapp() {
   if (r.ok) {
     el.className = 'form-success';
     el.textContent = 'WhatsApp credentials are set.';
+  } else {
+    const b = await r.json().catch(() => ({}));
+    el.className = 'form-error';
+    el.textContent = b.detail || `Error ${r.status}`;
+  }
+}
+
+async function testAisensy() {
+  const r = await fetch('/api/settings/test-aisensy', { method: 'POST' });
+  const el = document.getElementById('aisensy-test-result');
+  el.hidden = false;
+  if (r.ok) {
+    const b = await r.json().catch(() => ({}));
+    el.className = 'form-success';
+    el.textContent = b.detail || `AiSensy credentials are set (campaign: ${b.campaign || ''}).`;
   } else {
     const b = await r.json().catch(() => ({}));
     el.className = 'form-error';
